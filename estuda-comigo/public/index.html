@@ -169,7 +169,11 @@ async function callClaude(promptText, files){
   const data = await res.json();
   if(data.error) throw new Error(data.error);
   const clean = (data.text||'').replace(/```json|```/g,'').trim();
-  return JSON.parse(clean);
+  try{
+    return JSON.parse(clean);
+  }catch(e){
+    throw new Error('A resposta da IA veio incompleta (provavelmente por causa de uma quantidade grande de questões). Tente novamente ou peça menos questões.');
+  }
 }
 
 async function proofreadTexts(items){
