@@ -534,7 +534,11 @@ function bindEvents(){
   if(toggleAdd) toggleAdd.onclick = ()=>{ state.showAddChild = !state.showAddChild; render(); };
 
   const ageSlider = document.getElementById('new-age');
-  if(ageSlider) ageSlider.oninput = ()=> document.getElementById('age-out').textContent = ageSlider.value;
+  if(ageSlider){
+    const updateAge = ()=>{ const out=document.getElementById('age-out'); if(out) out.textContent = ageSlider.value; };
+    ageSlider.addEventListener('input', updateAge);
+    ageSlider.addEventListener('change', updateAge);
+  }
 
   document.querySelectorAll('[data-pref]').forEach(chip=>{
     chip.classList.toggle('on', newChildPrefs.has(chip.dataset.pref));
@@ -643,7 +647,12 @@ function compressImage(file){
   renderFilePreview();
 
   const countInput = document.getElementById('count-input');
-  if(countInput) countInput.oninput = ()=> document.getElementById('count-out').textContent = countInput.value;
+  if(countInput){
+    const updateCount = ()=>{ const out=document.getElementById('count-out'); if(out) out.textContent = countInput.value; };
+    updateCount();
+    countInput.addEventListener('input', updateCount);
+    countInput.addEventListener('change', updateCount);
+  }
 
   const skipPosterBtn = document.getElementById('skip-poster-btn');
   if(skipPosterBtn) skipPosterBtn.onclick = ()=>{ if(posterAbortController) posterAbortController.abort(); };
