@@ -166,6 +166,9 @@ async function callClaude(promptText, files){
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ prompt: promptText, images: (files||[]).map(f=>({base64:f.base64, mediaType:f.mediaType, isPdf:f.isPdf})) })
   });
+  if(res.status === 413){
+    throw new Error('Os arquivos anexados são grandes demais para enviar de uma vez. Tente com menos fotos ou remova o PDF.');
+  }
   const data = await res.json();
   if(data.error) throw new Error(data.error);
   const clean = (data.text||'').replace(/```json|```/g,'').trim();
@@ -570,9 +573,36 @@ function bindEvents(){
   if(switchSelHist) switchSelHist.onchange = ()=>{ state.activeChildId = switchSelHist.value; state.openHistoryId=null; render(); };
 
 
-  const cameraInput = document.getElementById('camera-input');
-  const fileInput = document.getElementById('file-input');
-  function addFiles(fileList){
+const MAX_TOTAL_BYTES = 3.5 * 1024 * 1024; // margem de segurança abaixo do limite de 4.5MB da Vercel
+
+function totalPendingBytes(){
+  return pendingFiles.reduce((sum,f)=> sum + Math.ceil(f.base64.length*0.75), 0);
+}
+
+function compressImage(file){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = ()=>{ img.src = reader.result; };
+    reader.onerror = reject;
+    img.onload = ()=>{
+      const MAX_DIM = 1600;
+      let { width, height } = img;
+      if(width > MAX_DIM || height > MAX_DIM){
+        const scale = MAX_DIM / Math.max(width, height);
+        width = Math.round(width*scale); height = Math.round(height*scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+      resolve({ dataUrl, base64: dataUrl.split(',')[1], mediaType: 'image/jpeg' });
+    };
+    img.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+  async function addFiles(fileList){
     const files = Array.from(fileList||[]);
     for(const file of files){
       if(pendingFiles.length >= MAX_FILES){
@@ -580,12 +610,32 @@ function bindEvents(){
         setTimeout(()=>{window.__toast=null;render();},3500);
         break;
       }
-      const reader = new FileReader();
-      reader.onload = ()=>{
-        pendingFiles.push({base64: reader.result.split(',')[1], mediaType: file.type, isPdf: file.type==='application/pdf', name: file.name, dataUrl: reader.result});
+      try{
+        let fileData;
+        if(file.type === 'application/pdf'){
+          if(file.size > 3*1024*1024){
+            window.__toast = `O arquivo "${file.name}" é muito grande (PDFs grandes não são suportados — tente uma foto da página em vez do PDF, ou um PDF menor).`;
+            setTimeout(()=>{window.__toast=null;render();},5000); render();
+            continue;
+          }
+          const dataUrl = await new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(file); });
+          fileData = { dataUrl, base64: dataUrl.split(',')[1], mediaType: 'application/pdf' };
+        } else {
+          fileData = await compressImage(file);
+        }
+        const newBytes = Math.ceil(fileData.base64.length*0.75);
+        if(totalPendingBytes() + newBytes > MAX_TOTAL_BYTES){
+          window.__toast = `Não deu pra anexar "${file.name}" — o total de arquivos ficaria grande demais para enviar. Remova algum ou tire fotos com menos arquivos por vez.`;
+          setTimeout(()=>{window.__toast=null;render();},5000); render();
+          continue;
+        }
+        pendingFiles.push({ base64: fileData.base64, mediaType: fileData.mediaType, isPdf: fileData.mediaType==='application/pdf', name: file.name, dataUrl: fileData.dataUrl });
         renderFilePreview();
-      };
-      reader.readAsDataURL(file);
+      }catch(e){
+        console.warn('falha ao processar arquivo', e);
+        window.__toast = `Não consegui processar "${file.name}".`;
+        setTimeout(()=>{window.__toast=null;render();},4000); render();
+      }
     }
   }
   if(cameraInput) cameraInput.onchange = ()=> addFiles(cameraInput.files);
