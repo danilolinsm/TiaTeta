@@ -114,10 +114,10 @@ async function saveActivities(childId){ await sSet('activities:'+childId, state.
 function activeChild(){ return state.children.find(c=>c.id===state.activeChildId); }
 
 // ---------- AI calls ----------
-async function callClaude(promptText, fileBase64, mediaType, isPdf){
+async function callClaude(promptText, files){
   const res = await fetch('/api/claude', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ prompt: promptText, image: fileBase64 ? {base64:fileBase64, mediaType, isPdf} : null })
+    body: JSON.stringify({ prompt: promptText, images: (files||[]).map(f=>({base64:f.base64, mediaType:f.mediaType, isPdf:f.isPdf})) })
   });
   const data = await res.json();
   if(data.error) throw new Error(data.error);
@@ -169,12 +169,13 @@ Todo texto deve estar em português, bem legível, sem erros de ortografia. Core
   return p;
 }
 
-async function generateActivity(subject, fileBase64, mediaType, isPdf, count){
+async function generateActivity(subject, files, count){
   const child = activeChild();
   const prefsText = child.prefs.map(prefLabel).join(', ');
+  const hasFiles = files && files.length;
   const prompt = `Você é um assistente pedagógico ajudando uma mãe a preparar a(o) filha(o) de ${child.age} anos (faixa etária ${ageBand(child.age)}) para uma prova sobre "${subject}".
 A criança gosta de: ${prefsText || 'nenhuma preferência informada'}.
-${fileBase64? 'Use o arquivo anexo (página do livro ou aviso da prova) como fonte do conteúdo.' : 'Baseie-se apenas no assunto informado, pois não há arquivo anexo.'}
+${hasFiles? `Use os ${files.length} arquivo(s) anexos (páginas do livro e/ou aviso da prova) como fonte do conteúdo.` : 'Baseie-se apenas no assunto informado, pois não há arquivo anexo.'}
 
 Gere um JSON (APENAS o JSON, sem texto antes ou depois, sem markdown) no seguinte formato:
 {
@@ -182,7 +183,7 @@ Gere um JSON (APENAS o JSON, sem texto antes ou depois, sem markdown) no seguint
   "mapa": [{"label":"nome curto do conceito (max 4 palavras)","emoji":"um emoji que combine com o conceito, se possível relacionado a ${prefsText||'algo lúdico'}"}, ... 4 a 6 itens],
   "questoes": [{"pergunta":"...", "opcoes":["a","b","c","d"], "correta":0}, ... exatamente ${count} itens]
 }`;
-  return await callClaude(prompt, fileBase64, mediaType, isPdf);
+  return await callClaude(prompt, files);
 }
 
 async function regenerateWithFeedback(part, activity, feedback){
@@ -200,7 +201,7 @@ Mapa anterior: ${JSON.stringify(activity.mapa)}
 Problema reportado pela mãe: "${feedback}"
 Gere APENAS um JSON: {"mapa":[{"label":"...","emoji":"..."}, ... 4 a 6 itens]}`;
   }
-  return await callClaude(prompt, null, null, false);
+  return await callClaude(prompt, null);
 }
 
 async function regenerateQuestion(activity){
@@ -208,7 +209,7 @@ async function regenerateQuestion(activity){
   const prompt = `Crie UMA nova questão de múltipla escolha (4 alternativas) sobre "${activity.subject}", adequada para uma criança de ${child.age} anos (${ageBand(child.age)}).
 Evite repetir estas perguntas já existentes: ${JSON.stringify(activity.questoes.map(q=>q.pergunta))}
 Gere APENAS um JSON: {"pergunta":"...","opcoes":["a","b","c","d"],"correta":0}`;
-  return await callClaude(prompt, null, null, false);
+  return await callClaude(prompt, null);
 }
 
 // ---------- rendering ----------
@@ -293,14 +294,14 @@ function renderEstudar(){
       <p class="section-title">🖼️ Nova atividade</p>
       <label class="field-label">Assunto da prova</label>
       <input type="text" id="subject-input" placeholder="Ex: ciclo da água, tabuada do 7..." style="margin-bottom:12px">
-      <label class="field-label">Foto ou PDF da página do livro (opcional)</label>
-      <div id="upload-preview" style="margin-bottom:8px"></div>
+      <label class="field-label">Fotos ou PDF da página do livro (opcional, até 20 arquivos)</label>
+      <div id="upload-preview" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px"></div>
       <div class="row" style="margin-bottom:12px">
         <label class="btn btn-block" for="camera-input" style="text-align:center;display:block">📷 Tirar foto</label>
-        <label class="btn btn-block" for="file-input" style="text-align:center;display:block">📎 Anexar arquivo</label>
+        <label class="btn btn-block" for="file-input" style="text-align:center;display:block">📎 Anexar arquivos</label>
       </div>
       <input type="file" accept="image/*" capture="environment" id="camera-input" style="display:none">
-      <input type="file" accept="image/*,application/pdf" id="file-input" style="display:none">
+      <input type="file" accept="image/*,application/pdf" id="file-input" style="display:none" multiple>
       <div style="margin:14px 0">
         <label class="field-label">Quantidade de questões do simulado: <span id="count-out">8</span></label>
         <input type="range" min="1" max="30" value="8" id="count-input">
@@ -390,8 +391,21 @@ function renderHistorico(){
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 // ---------- events ----------
-let pendingPhoto = null; // {base64, mediaType}
+let pendingFiles = []; // [{base64, mediaType, isPdf, name, dataUrl}]
 let newChildPrefs = new Set();
+const MAX_FILES = 20;
+
+function renderFilePreview(){
+  const preview = document.getElementById('upload-preview');
+  if(!preview) return;
+  preview.innerHTML = pendingFiles.map((f,i)=>{
+    const thumb = f.isPdf
+      ? `<div style="width:56px;height:56px;border-radius:8px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:22px">📄</div>`
+      : `<img src="${f.dataUrl}" alt="${escapeHtml(f.name)}" style="width:56px;height:56px;object-fit:cover;border-radius:8px">`;
+    return `<div style="position:relative">${thumb}<button data-remove-file="${i}" aria-label="Remover" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border-radius:50%;background:var(--danger);color:#fff;border:none;font-size:11px;line-height:1">✕</button></div>`;
+  }).join('') + (pendingFiles.length ? `<p style="width:100%;font-size:11px;color:var(--sub);margin:4px 0 0">${pendingFiles.length}/${MAX_FILES} arquivo(s) anexado(s)</p>` : '');
+  document.querySelectorAll('[data-remove-file]').forEach(b=>b.onclick = ()=>{ pendingFiles.splice(parseInt(b.dataset.removeFile,10),1); renderFilePreview(); });
+}
 
 function bindEvents(){
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = ()=>{ state.view=b.dataset.tab; state.currentActivity=null; state.error=null; render(); });
@@ -437,22 +451,25 @@ function bindEvents(){
 
   const cameraInput = document.getElementById('camera-input');
   const fileInput = document.getElementById('file-input');
-  function handleFile(file){
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = ()=>{
-      pendingPhoto = {base64: reader.result.split(',')[1], mediaType: file.type, isPdf: file.type==='application/pdf'};
-      const preview = document.getElementById('upload-preview');
-      if(pendingPhoto.isPdf){
-        preview.innerHTML = `<div class="badge">📄 ${escapeHtml(file.name)} anexado</div>`;
-      } else {
-        preview.innerHTML = `<img src="${reader.result}" alt="Foto selecionada" style="max-width:100%;border-radius:8px">`;
+  function addFiles(fileList){
+    const files = Array.from(fileList||[]);
+    for(const file of files){
+      if(pendingFiles.length >= MAX_FILES){
+        window.__toast = `Máximo de ${MAX_FILES} arquivos por atividade.`;
+        setTimeout(()=>{window.__toast=null;render();},3500);
+        break;
       }
-    };
-    reader.readAsDataURL(file);
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        pendingFiles.push({base64: reader.result.split(',')[1], mediaType: file.type, isPdf: file.type==='application/pdf', name: file.name, dataUrl: reader.result});
+        renderFilePreview();
+      };
+      reader.readAsDataURL(file);
+    }
   }
-  if(cameraInput) cameraInput.onchange = ()=> handleFile(cameraInput.files[0]);
-  if(fileInput) fileInput.onchange = ()=> handleFile(fileInput.files[0]);
+  if(cameraInput) cameraInput.onchange = ()=> addFiles(cameraInput.files);
+  if(fileInput) fileInput.onchange = ()=> addFiles(fileInput.files);
+  renderFilePreview();
 
   const countInput = document.getElementById('count-input');
   if(countInput) countInput.oninput = ()=> document.getElementById('count-out').textContent = countInput.value;
@@ -465,7 +482,7 @@ function bindEvents(){
     const count = parseInt(document.getElementById('count-input').value,10);
     state.loading = true; state.error = null; state.loadingMsg = 'Gerando conteúdo com IA...'; render();
     try{
-      const result = await generateActivity(subject, pendingPhoto?pendingPhoto.base64:null, pendingPhoto?pendingPhoto.mediaType:null, pendingPhoto?pendingPhoto.isPdf:false, count);
+      const result = await generateActivity(subject, pendingFiles, count);
 
       state.loadingMsg = 'Revisando o texto...'; render();
       const mapaLabels = result.mapa.map(n=>n.label);
@@ -482,9 +499,9 @@ function bindEvents(){
       }catch(e){ console.warn('poster falhou', e); window.__toast = 'Não consegui gerar o pôster ilustrado agora. O mapa mental ficou em formato de lista.'; setTimeout(()=>{window.__toast=null;render();},4500); }
     }catch(e){
       console.error(e);
-      state.error = 'Não consegui gerar o conteúdo agora. Tente novamente.';
+      state.error = 'Não consegui gerar o conteúdo agora. Detalhe: ' + (e.message || 'erro desconhecido');
     }
-    state.loading = false; pendingPhoto = null; render();
+    state.loading = false; pendingFiles = []; render();
   };
 
   const newActBtn = document.getElementById('new-activity-btn');
