@@ -577,7 +577,10 @@ function bindEvents(){
   if(switchSelHist) switchSelHist.onchange = ()=>{ state.activeChildId = switchSelHist.value; state.openHistoryId=null; render(); };
 
 
-const MAX_TOTAL_BYTES = 3.5 * 1024 * 1024; // margem de segurança abaixo do limite de 4.5MB da Vercel
+  const cameraInput = document.getElementById('camera-input');
+  const fileInput = document.getElementById('file-input');
+
+  const MAX_TOTAL_BYTES = 3.5 * 1024 * 1024; // margem de segurança abaixo do limite de 4.5MB da Vercel
 
 function totalPendingBytes(){
   return pendingFiles.reduce((sum,f)=> sum + Math.ceil(f.base64.length*0.75), 0);
