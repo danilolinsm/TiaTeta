@@ -439,17 +439,6 @@ function renderActivityResult(a, isCurrent){
       <p style="font-size:13px;line-height:1.6;white-space:pre-line">${escapeHtml(a.resumo)}</p>
     </div>
 
-    <div class="card map-print-page" style="background:var(--bg);border:none;margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-        <p class="section-title">🧠 Mapa mental ilustrado</p>
-        <button class="btn-ghost no-print" data-report="mapa">Reportar</button>
-      </div>
-      ${a.mapaError ? `<p class="err no-print" style="margin-bottom:8px">⚠️ Pôster ilustrado falhou — mostrando lista. Detalhe: ${escapeHtml(a.mapaError)}</p>` : ''}
-      ${a.mapaImage
-        ? `<img src="${a.mapaImage}" alt="Pôster de estudo ilustrado sobre ${escapeHtml(a.subject)}" style="width:100%;border-radius:8px;display:block">`
-        : a.mapa.map(n=>`<div class="map-node"><span class="em">${n.emoji||'⭐'}</span><span style="font-size:13px">${escapeHtml(n.label)}</span></div>`).join('')}
-    </div>
-
     <div class="card" style="background:var(--bg);border:none">
       <p class="section-title">✅ Simulado (${a.questoes.length} questões)</p>
       ${a.questoes.map((q,i)=>`<div class="q-row">
@@ -459,6 +448,17 @@ function renderActivityResult(a, isCurrent){
         </div>
         <div class="q-opts">${q.opcoes.map((o,oi)=>`${String.fromCharCode(97+oi)}) ${escapeHtml(o)}`).join(' &nbsp; ')}</div>
       </div>`).join('')}
+    </div>
+
+    <div class="card map-print-page" style="background:var(--bg);border:none;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <p class="section-title">🧠 Mapa mental ilustrado</p>
+        <button class="btn-ghost no-print" data-report="mapa">Reportar</button>
+      </div>
+      ${a.mapaError ? `<p class="err no-print" style="margin-bottom:8px">⚠️ Pôster ilustrado falhou — mostrando lista. Detalhe: ${escapeHtml(a.mapaError)}</p>` : ''}
+      ${a.mapaImage
+        ? `<img src="${a.mapaImage}" alt="Pôster de estudo ilustrado sobre ${escapeHtml(a.subject)}" style="width:100%;border-radius:8px;display:block">`
+        : a.mapa.map(n=>`<div class="map-node"><span class="em">${n.emoji||'⭐'}</span><span style="font-size:13px">${escapeHtml(n.label)}</span></div>`).join('')}
     </div>
 
     <div class="row no-print" style="margin-top:14px">
