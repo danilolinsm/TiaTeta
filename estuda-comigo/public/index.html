@@ -6,6 +6,7 @@
 <title>Estuda Comigo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#FBF8F2; --card:#FFFFFF; --ink:#22303C; --sub:#5C6B73;
@@ -29,7 +30,7 @@
   .btn-danger{background:none;border:none;color:var(--danger);padding:4px}
   .btn-ghost{background:none;border:none;color:var(--sub);font-size:13px}
   .btn-block{width:100%}
-  input[type=text],input[type=number],textarea,select{
+  input[type=text],input[type=number],input[type=password],input[type=email],textarea,select{
     width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-family:'Inter',sans-serif;color:var(--ink)
   }
   textarea{resize:vertical;min-height:70px}
@@ -69,9 +70,12 @@
   .err{color:var(--danger);font-size:12px;margin-top:6px}
   .hist-item{padding:12px;border-radius:10px;border:1px solid var(--line);background:#fff;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
   @media print{
+    @page{ margin: 10mm; }
     nav.tabs, .no-print{display:none!important}
     body{background:#fff}
-    .card{border:none;padding:0;margin-bottom:22px}
+    #app{max-width:none;padding-bottom:0}
+    .card{border:none;padding:0;margin-bottom:16px}
+    .map-print-page{page-break-before:always; break-before:page; padding-top:4mm}
   }
 </style>
 </head>
@@ -79,12 +83,52 @@
 <div id="app"></div>
 
 <script>
-// ---------- storage helpers (localStorage — este é um site real, fora do modo de pré-visualização) ----------
-async function sGet(key){ try{ const v = localStorage.getItem(key); return v? JSON.parse(v): null; }catch(e){ return null; } }
-async function sSet(key,val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){ console.warn('storage set failed (non-blocking)', e); } }
+// ---------- Supabase (banco de dados + login) ----------
+const SUPABASE_URL = 'https://riysxwgjsdltungeioji.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpeXN4d2dqc2RsdHVuZ2Vpb2ppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4MzEzNzAsImV4cCI6MjEwMzQwNzM3MH0.IONaLD45l6s_0FZqTZ2gh0pCPJtmXEejYOtTilCqUHA';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// nota: o script CDN expõe um objeto global chamado `supabase` — createClient vem de dentro dele.
+
+async function loadChildrenFromDb(){
+  const { data, error } = await db.from('children').select('*').order('created_at');
+  if(error){ console.warn('loadChildren', error); return []; }
+  return data.map(d=>({ id:d.id, name:d.name, age:d.age, school:d.school, prefs:d.prefs||[] }));
+}
+async function insertChildInDb(child){
+  const { data, error } = await db.from('children').insert({ user_id: state.user.id, name:child.name, age:child.age, school:child.school, prefs:child.prefs }).select().single();
+  if(error){ console.warn('insertChild', error); throw error; }
+  return { id:data.id, name:data.name, age:data.age, school:data.school, prefs:data.prefs||[] };
+}
+function rowToActivity(d){
+  return { id:d.id, subject:d.subject, createdAt:new Date(d.created_at).getTime(), resumo:d.resumo, resumoVersions:d.resumo_versions||[d.resumo], mapa:d.mapa||[], mapaVersions:d.mapa_versions||[d.mapa], mapaImage:d.mapa_image||null, mapaError:null, questoes:d.questoes||[] };
+}
+async function loadActivitiesFromDb(childId){
+  const { data, error } = await db.from('activities').select('*').eq('child_id', childId).order('created_at');
+  if(error){ console.warn('loadActivities', error); return []; }
+  return data.map(rowToActivity);
+}
+async function insertActivityInDb(childId, a){
+  const { data, error } = await db.from('activities').insert({
+    user_id: state.user.id, child_id: childId, subject:a.subject, resumo:a.resumo, resumo_versions:a.resumoVersions,
+    mapa:a.mapa, mapa_versions:a.mapaVersions, mapa_image:a.mapaImage, questoes:a.questoes
+  }).select().single();
+  if(error){ console.warn('insertActivity', error); throw error; }
+  return rowToActivity(data);
+}
+async function updateActivityInDb(a){
+  const { error } = await db.from('activities').update({
+    resumo:a.resumo, resumo_versions:a.resumoVersions, mapa:a.mapa, mapa_versions:a.mapaVersions, mapa_image:a.mapaImage, questoes:a.questoes
+  }).eq('id', a.id);
+  if(error) console.warn('updateActivity', error);
+}
+async function persistIfSaved(a){
+  const child = activeChild();
+  if(!child) return;
+  if((state.activities[child.id]||[]).find(x=>x.id===a.id)) await updateActivityInDb(a);
+}
 
 // ---------- state ----------
-let state = { children: [], activeChildId: null, activities: {}, view: 'filhos', loading:false, error:null };
+let state = { session:null, user:null, authMode:'login', authError:null, children: [], activeChildId: null, activities: {}, view: 'filhos', loading:false, error:null };
 
 const PREF_OPTIONS = [
   {id:'dino', label:'Dinossauros', em:'🦕'},
@@ -100,16 +144,13 @@ const PREF_OPTIONS = [
 function prefEmoji(id){ const p = PREF_OPTIONS.find(p=>p.id===id); return p? p.em : '⭐'; }
 function prefLabel(id){ const p = PREF_OPTIONS.find(p=>p.id===id); return p? p.label : id; }
 
-async function loadState(){
-  state.children = await sGet('children') || [];
+async function loadUserData(){
+  state.children = await loadChildrenFromDb();
   if(state.children.length) state.activeChildId = state.children[0].id;
   for(const c of state.children){
-    state.activities[c.id] = await sGet('activities:'+c.id) || [];
+    state.activities[c.id] = await loadActivitiesFromDb(c.id);
   }
-  state.geminiKey = 'server'; // a chave agora vive no backend; o front sempre tenta gerar o pôster
 }
-async function saveChildren(){ await sSet('children', state.children); }
-async function saveActivities(childId){ await sSet('activities:'+childId, state.activities[childId]||[]); }
 
 function activeChild(){ return state.children.find(c=>c.id===state.activeChildId); }
 
@@ -229,7 +270,12 @@ function iconSvg(name){
 }
 
 function render(){
-  let html = `<header class="top"><span>📚</span><h1>Estuda Comigo</h1></header>`;
+  if(!state.session){
+    app.innerHTML = `<header class="top"><span>📚</span><h1>Estuda Comigo</h1></header>` + renderAuthScreen();
+    bindAuthEvents();
+    return;
+  }
+  let html = `<header class="top" style="justify-content:space-between"><div style="display:flex;align-items:center;gap:10px"><span>📚</span><h1>Estuda Comigo</h1></div><button class="btn-ghost no-print" id="logout-btn">Sair</button></header>`;
   html += `<div class="view">`;
   if(state.view==='filhos') html += renderFilhos();
   if(state.view==='estudar') html += renderEstudar();
@@ -244,7 +290,56 @@ function render(){
   if(window.__toast) html += `<div class="no-print" style="position:fixed;bottom:76px;left:12px;right:12px;max-width:456px;margin:0 auto;background:var(--ink);color:#fff;font-size:12px;padding:10px 14px;border-radius:10px;z-index:30">${window.__toast}</div>`;
   app.innerHTML = html;
   bindEvents();
+  const logoutBtn = document.getElementById('logout-btn');
+  if(logoutBtn) logoutBtn.onclick = async ()=>{ await db.auth.signOut(); };
 }
+
+function renderAuthScreen(){
+  const signup = state.authMode==='signup';
+  return `<div class="view">
+    <div class="card" style="margin-top:20px">
+      <h2 style="font-size:18px;margin-bottom:4px">${signup?'Criar conta':'Entrar'}</h2>
+      <p style="font-size:12px;color:var(--sub);margin:0 0 14px">Seus filhos e o histórico ficam salvos com segurança e acessíveis de qualquer aparelho.</p>
+      <label class="field-label">Email</label>
+      <input type="email" id="auth-email" placeholder="seu@email.com" style="margin-bottom:10px">
+      <label class="field-label">Senha</label>
+      <input type="password" id="auth-password" placeholder="Mínimo 6 caracteres" style="margin-bottom:14px">
+      <button class="btn btn-primary btn-block" id="auth-submit">${signup?'Criar conta':'Entrar'}</button>
+      <p class="err" id="auth-err" style="display:${state.authError?'block':'none'}">${state.authError||''}</p>
+      ${signup?'<p style="font-size:11px;color:var(--sub);margin-top:10px">Pode ser necessário confirmar o email antes do primeiro acesso.</p>':''}
+      <button class="btn-ghost" id="auth-toggle" style="margin-top:12px">${signup?'Já tenho conta — entrar':'Não tenho conta — criar'}</button>
+    </div>
+  </div>`;
+}
+
+function bindAuthEvents(){
+  const submit = document.getElementById('auth-submit');
+  const toggle = document.getElementById('auth-toggle');
+  if(toggle) toggle.onclick = ()=>{ state.authMode = state.authMode==='signup'?'login':'signup'; state.authError=null; render(); };
+  if(submit) submit.onclick = async ()=>{
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const errEl = document.getElementById('auth-err');
+    if(!email || !password){ errEl.textContent='Preencha email e senha.'; errEl.style.display='block'; return; }
+    submit.textContent = 'Aguarde...';
+    const fn = state.authMode==='signup' ? db.auth.signUp({email,password}) : db.auth.signInWithPassword({email,password});
+    const { data, error } = await fn;
+    if(error){
+      state.authError = error.message;
+      render();
+      return;
+    }
+    if(state.authMode==='signup' && data.user && !data.session){
+      state.authError = null;
+      alert('Conta criada! Verifique seu email para confirmar antes de entrar.');
+      state.authMode = 'login';
+      render();
+      return;
+    }
+    // onAuthStateChange cuida do resto (carregar dados e navegar pro app)
+  };
+}
+
 
 function renderFilhos(){
   let h = `<h2 style="font-size:17px;margin-bottom:12px">Meus filhos</h2>`;
@@ -338,7 +433,7 @@ function renderActivityResult(a, isCurrent){
       <p style="font-size:13px;line-height:1.6;white-space:pre-line">${escapeHtml(a.resumo)}</p>
     </div>
 
-    <div class="card" style="background:var(--bg);border:none;margin-bottom:10px">
+    <div class="card map-print-page" style="background:var(--bg);border:none;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <p class="section-title">🧠 Mapa mental ilustrado</p>
         <button class="btn-ghost no-print" data-report="mapa">Reportar</button>
@@ -438,14 +533,19 @@ function bindEvents(){
     const school = document.getElementById('new-school').value.trim();
     const errEl = document.getElementById('add-child-err');
     if(!name){ errEl.textContent='Digite o nome da criança.'; errEl.style.display='block'; return; }
-    const child = {id:'c'+Date.now(), name, age, school, prefs:[...newChildPrefs]};
-    state.children.push(child);
-    state.activeChildId = child.id;
-    state.activities[child.id] = [];
-    newChildPrefs = new Set();
-    state.showAddChild = false;
-    await saveChildren();
-    render();
+    errEl.style.display='none';
+    try{
+      const child = await insertChildInDb({ name, age, school, prefs:[...newChildPrefs] });
+      state.children.push(child);
+      state.activeChildId = child.id;
+      state.activities[child.id] = [];
+      newChildPrefs = new Set();
+      state.showAddChild = false;
+      render();
+    }catch(e){
+      errEl.textContent = 'Não consegui salvar: ' + (e.message||'erro desconhecido');
+      errEl.style.display='block';
+    }
   };
 
   const switchSel = document.getElementById('switch-child');
@@ -524,6 +624,7 @@ function bindEvents(){
       const q = await regenerateQuestion(a);
       a.questoes.splice(i,0,q);
     }catch(e){ console.error(e); }
+    await persistIfSaved(a);
     render();
   });
 
@@ -533,12 +634,18 @@ function bindEvents(){
   const saveBtn = document.getElementById('save-activity-btn');
   if(saveBtn) saveBtn.onclick = async ()=>{
     const child = activeChild();
-    state.activities[child.id] = state.activities[child.id]||[];
-    state.activities[child.id].push(state.currentActivity);
-    await saveActivities(child.id);
-    state.currentActivity = null;
-    state.view = 'historico';
-    render();
+    try{
+      const saved = await insertActivityInDb(child.id, state.currentActivity);
+      state.activities[child.id] = state.activities[child.id]||[];
+      state.activities[child.id].push(saved);
+      state.currentActivity = null;
+      state.view = 'historico';
+      render();
+    }catch(e){
+      window.__toast = 'Não consegui salvar no histórico: ' + (e.message||'erro desconhecido');
+      setTimeout(()=>{window.__toast=null;render();},4500);
+      render();
+    }
   };
 
   document.querySelectorAll('[data-open-hist]').forEach(el=>el.onclick = ()=>{ state.openHistoryId = el.dataset.openHist; render(); });
@@ -583,6 +690,7 @@ function openReportModal(part){
         else { a.mapa = result.mapa; a.mapaVersions.push(result.mapa); }
       }
     }catch(e){ console.error(e); window.__toast = 'Não consegui gerar de novo agora. Tente mais uma vez.'; setTimeout(()=>{window.__toast=null;render();},4000); }
+    await persistIfSaved(a);
     state.loading = false; render();
   };
 }
@@ -590,8 +698,26 @@ function openReportModal(part){
 // ---------- init ----------
 (async function init(){
   app.innerHTML = '<div class="loading">Carregando...</div>';
-  await loadState();
+
+  const { data: { session } } = await db.auth.getSession();
+  state.session = session; state.user = session ? session.user : null;
+  if(state.session) await loadUserData();
   render();
+
+  db.auth.onAuthStateChange(async (event, session)=>{
+    const hadSession = !!state.session;
+    state.session = session; state.user = session ? session.user : null;
+    if(session && !hadSession){
+      state.children = []; state.activities = {}; state.activeChildId = null;
+      app.innerHTML = '<div class="loading">Carregando seus dados...</div>';
+      await loadUserData();
+      render();
+    } else if(!session){
+      state.children = []; state.activities = {}; state.activeChildId = null; state.currentActivity = null;
+      state.view = 'filhos'; state.authError = null;
+      render();
+    }
+  });
 })();
 </script>
 </body>
