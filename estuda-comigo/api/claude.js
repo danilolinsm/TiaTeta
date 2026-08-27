@@ -6,18 +6,20 @@ module.exports = async function handler(req, res) {
     return;
   }
   try {
-    const { prompt, image } = req.body || {};
+    const { prompt, images, image } = req.body || {};
     if (!prompt) {
       res.status(400).json({ error: 'prompt é obrigatório' });
       return;
     }
 
     const content = [];
-    if (image && image.base64) {
-      if (image.isPdf) {
-        content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: image.base64 } });
+    const fileList = (images && images.length) ? images : (image ? [image] : []);
+    for (const file of fileList) {
+      if (!file || !file.base64) continue;
+      if (file.isPdf) {
+        content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: file.base64 } });
       } else {
-        content.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType || 'image/jpeg', data: image.base64 } });
+        content.push({ type: 'image', source: { type: 'base64', media_type: file.mediaType || 'image/jpeg', data: file.base64 } });
       }
     }
     content.push({ type: 'text', text: prompt });
@@ -37,12 +39,14 @@ module.exports = async function handler(req, res) {
     });
     const data = await r.json();
     if (data.error) {
-      res.status(500).json({ error: data.error.message });
+      console.error('Erro da Anthropic:', JSON.stringify(data.error));
+      res.status(500).json({ error: typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error)) });
       return;
     }
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
     res.status(200).json({ text });
   } catch (e) {
+    console.error('Erro inesperado em /api/claude:', e);
     res.status(500).json({ error: e.message });
   }
 };
