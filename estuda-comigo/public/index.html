@@ -190,10 +190,11 @@ function ageBand(age){
   return 'de 12 a 13 anos: pode usar frases mais longas e vocabulário mais técnico, mantendo clareza';
 }
 
-async function callNanoBanana(promptText){
+async function callNanoBanana(promptText, signal){
   const res = await fetch('/api/image', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ prompt: promptText })
+    body: JSON.stringify({ prompt: promptText }),
+    signal
   });
   const data = await res.json();
   if(data.error) throw new Error(data.error);
@@ -416,7 +417,7 @@ function renderEstudar(){
       <p class="err" id="gen-err" style="display:${state.error?'block':'none'}">${state.error||''}</p>
       <p style="font-size:11px;color:var(--sub);margin-top:10px">⚠️ O conteúdo é gerado por IA e pode conter erros. Revise antes de usar com a criança.</p>
     </div>`;
-    if(state.loading) h += `<div class="loading"><span class="spin-book">📖</span><br>${state.loadingMsg||'Gerando conteúdo com IA...'}</div>`;
+    if(state.loading) h += `<div class="loading"><span class="spin-book">📖</span><br>${state.loadingMsg||'Gerando conteúdo com IA...'}<br><span style="font-size:12px">⏱️ ${state.loadingSeconds||0}s — ainda trabalhando, não fechar a tela</span>${(posterAbortController && (state.loadingSeconds||0)>6) ? `<br><button class="btn no-print" id="skip-poster-btn" style="margin-top:12px">Pular ilustração e continuar sem pôster</button>` : ''}</div>`;
   } else {
     h += renderActivityResult(state.currentActivity, true);
   }
@@ -499,6 +500,10 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 
 // ---------- events ----------
 let pendingFiles = []; // [{base64, mediaType, isPdf, name, dataUrl}]
+let posterAbortController = null;
+let loadingTimer = null;
+function startLoadingTimer(){ state.loadingSeconds = 0; clearInterval(loadingTimer); loadingTimer = setInterval(()=>{ state.loadingSeconds++; render(); },1000); }
+function stopLoadingTimer(){ clearInterval(loadingTimer); loadingTimer = null; }
 let newChildPrefs = new Set();
 const MAX_FILES = 20;
 
@@ -586,13 +591,16 @@ function bindEvents(){
   const countInput = document.getElementById('count-input');
   if(countInput) countInput.oninput = ()=> document.getElementById('count-out').textContent = countInput.value;
 
+  const skipPosterBtn = document.getElementById('skip-poster-btn');
+  if(skipPosterBtn) skipPosterBtn.onclick = ()=>{ if(posterAbortController) posterAbortController.abort(); };
+
   const genBtn = document.getElementById('generate-btn');
   if(genBtn) genBtn.onclick = async ()=>{
     const subject = document.getElementById('subject-input').value.trim();
     const errEl = document.getElementById('gen-err');
     if(!subject){ errEl.textContent='Digite o assunto da prova.'; errEl.style.display='block'; return; }
     const count = parseInt(document.getElementById('count-input').value,10);
-    state.loading = true; state.error = null; state.loadingMsg = 'Gerando conteúdo com IA...'; render();
+    state.loading = true; state.error = null; state.loadingMsg = 'Gerando conteúdo com IA...'; startLoadingTimer(); render();
     try{
       const result = await generateActivity(subject, pendingFiles, count);
 
@@ -603,17 +611,22 @@ function bindEvents(){
       const mapaRevisado = result.mapa.map((n,i)=>({...n, label: revised[i+1]||n.label}));
 
       state.currentActivity = { id:'a'+Date.now(), subject, createdAt: Date.now(), resumo: resumoRevisado, resumoVersions:[resumoRevisado], mapa: mapaRevisado, mapaVersions:[mapaRevisado], mapaImage:null, questoes: result.questoes };
-      state.loadingMsg = 'Desenhando o pôster ilustrado...'; render();
+      state.loadingMsg = 'Desenhando o pôster ilustrado (pode levar até 40s)...'; render();
       try{
         const child = activeChild();
         const prefsText = child.prefs.map(prefLabel).join(', ');
-        state.currentActivity.mapaImage = await callNanoBanana(buildPosterPrompt(subject, resumoRevisado, mapaRevisado, prefsText, child.age));
-      }catch(e){ console.warn('poster falhou', e); state.currentActivity.mapaError = e.message || 'erro desconhecido'; }
+        posterAbortController = new AbortController();
+        state.currentActivity.mapaImage = await callNanoBanana(buildPosterPrompt(subject, resumoRevisado, mapaRevisado, prefsText, child.age), posterAbortController.signal);
+      }catch(e){
+        console.warn('poster falhou', e);
+        state.currentActivity.mapaError = (e.name==='AbortError') ? 'Você optou por pular a espera.' : (e.message || 'erro desconhecido');
+      }
+      posterAbortController = null;
     }catch(e){
       console.error(e);
       state.error = 'Não consegui gerar o conteúdo agora. Detalhe: ' + (e.message || 'erro desconhecido');
     }
-    state.loading = false; pendingFiles = []; render();
+    stopLoadingTimer(); state.loading = false; pendingFiles = []; render();
   };
 
   const newActBtn = document.getElementById('new-activity-btn');
@@ -682,7 +695,7 @@ function openReportModal(part){
     if(!fb){ errEl.textContent='Conte rapidamente o que estava errado.'; errEl.style.display='block'; return; }
     window.__modal = null;
     const a = state.currentActivity || findOpenHistoryActivity();
-    state.loading = true; state.loadingMsg = part==='mapa' && a.mapaImage ? 'Redesenhando o pôster...' : 'Gerando de novo...'; render();
+    state.loading = true; state.loadingMsg = part==='mapa' && a.mapaImage ? 'Redesenhando o pôster (pode levar até 40s)...' : 'Gerando de novo...'; startLoadingTimer(); render();
     try{
       if(part==='mapa' && a.mapaImage){
         const child = activeChild();
@@ -697,7 +710,7 @@ function openReportModal(part){
       }
     }catch(e){ console.error(e); window.__toast = 'Não consegui gerar de novo agora. Tente mais uma vez.'; setTimeout(()=>{window.__toast=null;render();},4000); }
     await persistIfSaved(a);
-    state.loading = false; render();
+    stopLoadingTimer(); state.loading = false; render();
   };
 }
 
