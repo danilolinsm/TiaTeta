@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estuda Comigo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FBF8F2; --card:#FFFFFF; --ink:#22303C; --sub:#5C6B73;
+    --teal:#2F6D5D; --teal-dark:#1F4B3F; --amber:#F2A65A; --amber-dark:#8A5423;
+    --line:#E4DFD3; --danger:#C0483E;
+    --r:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased}
+  h1,h2,h3{font-family:'Fraunces',serif;font-weight:600;margin:0}
+  button{font-family:'Inter',sans-serif;cursor:pointer}
+  #app{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);padding-bottom:76px;position:relative}
+  header.top{padding:20px 18px 12px;display:flex;align-items:center;gap:10px}
+  header.top h1{font-size:22px;color:var(--teal-dark)}
+  header.top span{font-size:22px}
+  .view{padding:0 18px 18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
+  .btn{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 14px;font-size:14px;font-weight:500;color:var(--ink)}
+  .btn:active{transform:scale(0.98)}
+  .btn-primary{background:var(--teal);color:#fff;border:none}
+  .btn-danger{background:none;border:none;color:var(--danger);padding:4px}
+  .btn-ghost{background:none;border:none;color:var(--sub);font-size:13px}
+  .btn-block{width:100%}
+  input[type=text],input[type=number],textarea,select{
+    width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-family:'Inter',sans-serif;color:var(--ink)
+  }
+  textarea{resize:vertical;min-height:70px}
+  label.field-label{font-size:12px;color:var(--sub);display:block;margin:0 0 6px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:20px;border:1px solid var(--line);background:#fff;font-size:13px;margin:0 6px 6px 0}
+  .chip.on{background:var(--amber);border-color:var(--amber-dark);color:#4A2E10;font-weight:500}
+  .child-row{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;border:1px solid var(--line);background:#fff;margin-bottom:10px}
+  .child-row.active{border:2px solid var(--teal)}
+  .avatar{width:42px;height:42px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+  .child-meta{flex:1}
+  .child-meta strong{font-size:14px;display:block}
+  .child-meta small{color:var(--sub);font-size:12px}
+  nav.tabs{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;max-width:480px;margin:0 auto}
+  nav.tabs button{flex:1;background:none;border:none;padding:12px 0 10px;font-size:11px;color:var(--sub);display:flex;flex-direction:column;align-items:center;gap:4px}
+  nav.tabs button.active{color:var(--teal)}
+  .icon{width:20px;height:20px;display:inline-block}
+  .upload-box{border:2px dashed var(--line);border-radius:12px;padding:26px 12px;text-align:center;color:var(--sub);font-size:13px}
+  .upload-box img{max-width:100%;border-radius:8px;margin-bottom:8px}
+  .section-title{font-size:14px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;background:var(--bg);border-radius:8px;padding:6px 10px}
+  .map-node{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+  .map-node .em{font-size:20px}
+  .q-row{background:var(--bg);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+  .q-row .q-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .q-row p{margin:0;font-size:13px}
+  .q-opts{margin-top:6px;font-size:12px;color:var(--sub)}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:20;padding:20px}
+  .modal{background:#fff;border-radius:14px;padding:18px;max-width:400px;width:100%}
+  .empty{text-align:center;padding:40px 20px;color:var(--sub)}
+  .empty .em{font-size:32px;display:block;margin-bottom:8px}
+  .loading{text-align:center;padding:30px;color:var(--sub);font-size:14px}
+  .row{display:flex;gap:10px}
+  .row>*{flex:1}
+  .toggle{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .toggle button{flex:1;padding:10px;background:#fff;border:none;font-size:13px;font-weight:500;color:var(--sub)}
+  .toggle button.on{background:var(--teal);color:#fff}
+  .err{color:var(--danger);font-size:12px;margin-top:6px}
+  .hist-item{padding:12px;border-radius:10px;border:1px solid var(--line);background:#fff;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  @media print{
+    nav.tabs, .no-print{display:none!important}
+    body{background:#fff}
+    .card{border:none;padding:0;margin-bottom:22px}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ---------- storage helpers (localStorage — este é um site real, fora do modo de pré-visualização) ----------
+async function sGet(key){ try{ const v = localStorage.getItem(key); return v? JSON.parse(v): null; }catch(e){ return null; } }
+async function sSet(key,val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){ console.warn('storage set failed (non-blocking)', e); } }
+
+// ---------- state ----------
+let state = { children: [], activeChildId: null, activities: {}, view: 'filhos', loading:false, error:null };
+
+const PREF_OPTIONS = [
+  {id:'dino', label:'Dinossauros', em:'🦕'},
+  {id:'heroi', label:'Super-heróis', em:'🦸'},
+  {id:'desenho', label:'Desenho animado', em:'📺'},
+  {id:'animais', label:'Animais', em:'🐾'},
+  {id:'espaco', label:'Espaço', em:'🚀'},
+  {id:'princesa', label:'Princesas', em:'👑'},
+  {id:'futebol', label:'Futebol', em:'⚽'},
+  {id:'arte', label:'Arte e desenho', em:'🎨'},
+];
+
+function prefEmoji(id){ const p = PREF_OPTIONS.find(p=>p.id===id); return p? p.em : '⭐'; }
+function prefLabel(id){ const p = PREF_OPTIONS.find(p=>p.id===id); return p? p.label : id; }
+
+async function loadState(){
+  state.children = await sGet('children') || [];
+  if(state.children.length) state.activeChildId = state.children[0].id;
+  for(const c of state.children){
+    state.activities[c.id] = await sGet('activities:'+c.id) || [];
+  }
+  state.geminiKey = 'server'; // a chave agora vive no backend; o front sempre tenta gerar o pôster
+}
+async function saveChildren(){ await sSet('children', state.children); }
+async function saveActivities(childId){ await sSet('activities:'+childId, state.activities[childId]||[]); }
+
+function activeChild(){ return state.children.find(c=>c.id===state.activeChildId); }
+
+// ---------- AI calls ----------
+async function callClaude(promptText, fileBase64, mediaType, isPdf){
+  const res = await fetch('/api/claude', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ prompt: promptText, image: fileBase64 ? {base64:fileBase64, mediaType, isPdf} : null })
+  });
+  const data = await res.json();
+  if(data.error) throw new Error(data.error);
+  const clean = (data.text||'').replace(/```json|```/g,'').trim();
+  return JSON.parse(clean);
+}
+
+async function proofreadTexts(items){
+  try{
+    const res = await fetch('/api/proofread', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ items })
+    });
+    const data = await res.json();
+    if(data.error || !Array.isArray(data.items)) return items;
+    return data.items;
+  }catch(e){ console.warn('proofread falhou, mantendo texto original', e); return items; }
+}
+
+function ageBand(age){
+  if(age<=8) return 'de 5 a 8 anos: frases bem curtas, vocabulário simples, poucas ideias por parágrafo';
+  if(age<=11) return 'de 9 a 11 anos: frases médias, pode introduzir termos novos explicando-os';
+  return 'de 12 a 13 anos: pode usar frases mais longas e vocabulário mais técnico, mantendo clareza';
+}
+
+async function callNanoBanana(promptText){
+  const res = await fetch('/api/image', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ prompt: promptText })
+  });
+  const data = await res.json();
+  if(data.error) throw new Error(data.error);
+  return data.dataUrl;
+}
+
+
+function buildPosterPrompt(subject, resumoText, mapaNodes, prefsText, age, feedback){
+  let p = `Crie um pôster de estudos ilustrado, estilo desenho animado infantil colorido e alegre, formato retrato A4, para uma criança de ${age} anos que gosta de ${prefsText||'temas lúdicos'}.
+Assunto: "${subject}".
+Título grande no topo com o nome do assunto.
+Abaixo do título, um pequeno guia numerado: "1. Resumo  2. Mapa mental  3. Questões para praticar".
+Ilustre uma cena temática grande e cheia de detalhes relacionada ao assunto, incorporando elementos de ${prefsText||'algo lúdico'} quando fizer sentido.
+Distribua pelo pôster pequenas caixas de texto ou placas explicando estes conceitos, em português correto e curto:
+${mapaNodes.map(n=>`- ${n.label}`).join('\n')}
+Baseie as explicações neste resumo: """${(resumoText||'').slice(0,500)}"""
+No rodapé, inclua uma faixa com o texto "QUESTÕES PARA PRATICAR".
+Todo texto deve estar em português, bem legível, sem erros de ortografia. Cores vivas, sem elementos assustadores.`;
+  if(feedback) p += `\n\nAjuste pedido pela mãe: ${feedback}`;
+  return p;
+}
+
+async function generateActivity(subject, fileBase64, mediaType, isPdf, count){
+  const child = activeChild();
+  const prefsText = child.prefs.map(prefLabel).join(', ');
+  const prompt = `Você é um assistente pedagógico ajudando uma mãe a preparar a(o) filha(o) de ${child.age} anos (faixa etária ${ageBand(child.age)}) para uma prova sobre "${subject}".
+A criança gosta de: ${prefsText || 'nenhuma preferência informada'}.
+${fileBase64? 'Use o arquivo anexo (página do livro ou aviso da prova) como fonte do conteúdo.' : 'Baseie-se apenas no assunto informado, pois não há arquivo anexo.'}
+
+Gere um JSON (APENAS o JSON, sem texto antes ou depois, sem markdown) no seguinte formato:
+{
+  "resumo": "resumo em 3 a 5 parágrafos curtos, linguagem adequada à idade",
+  "mapa": [{"label":"nome curto do conceito (max 4 palavras)","emoji":"um emoji que combine com o conceito, se possível relacionado a ${prefsText||'algo lúdico'}"}, ... 4 a 6 itens],
+  "questoes": [{"pergunta":"...", "opcoes":["a","b","c","d"], "correta":0}, ... exatamente ${count} itens]
+}`;
+  return await callClaude(prompt, fileBase64, mediaType, isPdf);
+}
+
+async function regenerateWithFeedback(part, activity, feedback){
+  const child = activeChild();
+  const prefsText = child.prefs.map(prefLabel).join(', ');
+  let prompt;
+  if(part==='resumo'){
+    prompt = `Refaça este resumo de estudo para uma criança de ${child.age} anos (${ageBand(child.age)}) sobre "${activity.subject}".
+Resumo anterior: """${activity.resumo}"""
+Problema reportado pela mãe: "${feedback}"
+Gere APENAS um JSON: {"resumo":"novo resumo corrigido, 3 a 5 parágrafos curtos"}`;
+  } else {
+    prompt = `Refaça este mapa mental de estudo para uma criança de ${child.age} anos sobre "${activity.subject}", que gosta de ${prefsText||'temas lúdicos'}.
+Mapa anterior: ${JSON.stringify(activity.mapa)}
+Problema reportado pela mãe: "${feedback}"
+Gere APENAS um JSON: {"mapa":[{"label":"...","emoji":"..."}, ... 4 a 6 itens]}`;
+  }
+  return await callClaude(prompt, null, null, false);
+}
+
+async function regenerateQuestion(activity){
+  const child = activeChild();
+  const prompt = `Crie UMA nova questão de múltipla escolha (4 alternativas) sobre "${activity.subject}", adequada para uma criança de ${child.age} anos (${ageBand(child.age)}).
+Evite repetir estas perguntas já existentes: ${JSON.stringify(activity.questoes.map(q=>q.pergunta))}
+Gere APENAS um JSON: {"pergunta":"...","opcoes":["a","b","c","d"],"correta":0}`;
+  return await callClaude(prompt, null, null, false);
+}
+
+// ---------- rendering ----------
+const app = document.getElementById('app');
+
+function iconSvg(name){
+  const icons = {
+    filhos:'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>',
+    estudar:'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18"/></svg>',
+    historico:'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>'
+  };
+  return icons[name]||'';
+}
+
+function render(){
+  let html = `<header class="top"><span>📚</span><h1>Estuda Comigo</h1></header>`;
+  html += `<div class="view">`;
+  if(state.view==='filhos') html += renderFilhos();
+  if(state.view==='estudar') html += renderEstudar();
+  if(state.view==='historico') html += renderHistorico();
+  html += `</div>`;
+  html += `<nav class="tabs no-print">
+    <button data-tab="filhos" class="${state.view==='filhos'?'active':''}">${iconSvg('filhos')}Filhos</button>
+    <button data-tab="estudar" class="${state.view==='estudar'?'active':''}">${iconSvg('estudar')}Estudar</button>
+    <button data-tab="historico" class="${state.view==='historico'?'active':''}">${iconSvg('historico')}Histórico</button>
+  </nav>`;
+  if(window.__modal) html += window.__modal;
+  if(window.__toast) html += `<div class="no-print" style="position:fixed;bottom:76px;left:12px;right:12px;max-width:456px;margin:0 auto;background:var(--ink);color:#fff;font-size:12px;padding:10px 14px;border-radius:10px;z-index:30">${window.__toast}</div>`;
+  app.innerHTML = html;
+  bindEvents();
+}
+
+function renderFilhos(){
+  let h = `<h2 style="font-size:17px;margin-bottom:12px">Meus filhos</h2>`;
+  if(!state.children.length){
+    h += `<div class="card empty"><span class="em">👨‍👩‍👧</span>Cadastre seu primeiro filho para começar.</div>`;
+  }
+  for(const c of state.children){
+    h += `<div class="child-row ${c.id===state.activeChildId?'active':''}" data-select-child="${c.id}">
+      <div class="avatar">${c.prefs[0]?prefEmoji(c.prefs[0]):'🙂'}</div>
+      <div class="child-meta"><strong>${escapeHtml(c.name)}</strong><small>${c.age} anos · ${c.school?escapeHtml(c.school)+' · ':''}${c.prefs.map(prefLabel).join(', ')||'sem preferências'}</small></div>
+    </div>`;
+  }
+
+  const showForm = state.children.length===0 || state.showAddChild;
+
+  if(!showForm){
+    h += `<button class="btn btn-block" id="toggle-add-child">+ Adicionar outro filho</button>`;
+  } else {
+    h += `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <p class="section-title" style="margin-bottom:0">Adicionar filho</p>
+        ${state.children.length>0?`<button class="btn-ghost" id="toggle-add-child">fechar ▲</button>`:''}
+      </div>
+      <label class="field-label">Nome</label>
+      <input type="text" id="new-name" placeholder="Nome da criança" style="margin-bottom:10px">
+      <label class="field-label">Idade: <span id="age-out">8</span> anos</label>
+      <input type="range" min="4" max="13" value="8" id="new-age" style="margin-bottom:10px">
+      <label class="field-label">Colégio (opcional)</label>
+      <input type="text" id="new-school" placeholder="Nome do colégio" style="margin-bottom:10px">
+      <label class="field-label">O que ele(a) adora?</label>
+      <div id="pref-chips" style="margin-bottom:12px">${PREF_OPTIONS.map(p=>`<span class="chip" data-pref="${p.id}">${p.em} ${p.label}</span>`).join('')}</div>
+      <button class="btn btn-primary btn-block" id="add-child-btn">Adicionar filho</button>
+      <p class="err" id="add-child-err" style="display:none"></p>
+    </div>`;
+  }
+  return h;
+}
+
+function renderEstudar(){
+  const child = activeChild();
+  if(!child) return `<div class="card empty"><span class="em">🙈</span>Cadastre um filho primeiro na aba "Filhos".</div>`;
+  let h = `<div class="card" style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between">
+    <div><strong style="font-size:14px">${escapeHtml(child.name)}</strong> <span style="color:var(--sub);font-size:12px">· ${child.age} anos</span></div>
+    ${state.children.length>1?`<select id="switch-child" style="width:auto">${state.children.map(c=>`<option value="${c.id}" ${c.id===child.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>`:''}
+  </div>`;
+
+  h += `<p class="no-print" style="font-size:11px;color:var(--sub);margin:-4px 0 4px">🎨 Pôster ilustrado gerado automaticamente pela IA.</p>`;
+
+  if(!state.currentActivity){
+    h += `<div class="card">
+      <p class="section-title">🖼️ Nova atividade</p>
+      <label class="field-label">Assunto da prova</label>
+      <input type="text" id="subject-input" placeholder="Ex: ciclo da água, tabuada do 7..." style="margin-bottom:12px">
+      <label class="field-label">Foto ou PDF da página do livro (opcional)</label>
+      <div id="upload-preview" style="margin-bottom:8px"></div>
+      <div class="row" style="margin-bottom:12px">
+        <label class="btn btn-block" for="camera-input" style="text-align:center;display:block">📷 Tirar foto</label>
+        <label class="btn btn-block" for="file-input" style="text-align:center;display:block">📎 Anexar arquivo</label>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="camera-input" style="display:none">
+      <input type="file" accept="image/*,application/pdf" id="file-input" style="display:none">
+      <div style="margin:14px 0">
+        <label class="field-label">Quantidade de questões do simulado: <span id="count-out">8</span></label>
+        <input type="range" min="1" max="30" value="8" id="count-input">
+      </div>
+      <button class="btn btn-primary btn-block" id="generate-btn">Gerar estratégias de estudo</button>
+      <p class="err" id="gen-err" style="display:${state.error?'block':'none'}">${state.error||''}</p>
+      <p style="font-size:11px;color:var(--sub);margin-top:10px">⚠️ O conteúdo é gerado por IA e pode conter erros. Revise antes de usar com a criança.</p>
+    </div>`;
+    if(state.loading) h += `<div class="loading">${state.loadingMsg||'Gerando conteúdo com IA...'}</div>`;
+  } else {
+    h += renderActivityResult(state.currentActivity, true);
+  }
+  return h;
+}
+
+function renderActivityResult(a, isCurrent){
+  let h = `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3 style="font-size:16px">${escapeHtml(a.subject)}</h3>
+      ${isCurrent?`<button class="btn-ghost no-print" id="new-activity-btn">+ nova</button>`:''}
+    </div>
+    <p class="no-print" style="font-size:11px;color:var(--sub);background:var(--bg);border-radius:8px;padding:8px 10px;margin-bottom:12px">⚠️ Conteúdo gerado por IA — pode conter erros. Revise antes de usar com a criança.</p>
+
+    <div class="card" style="background:var(--bg);border:none;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <p class="section-title">📄 Resumo fácil</p>
+        <button class="btn-ghost no-print" data-report="resumo">Reportar</button>
+      </div>
+      <p style="font-size:13px;line-height:1.6;white-space:pre-line">${escapeHtml(a.resumo)}</p>
+    </div>
+
+    <div class="card" style="background:var(--bg);border:none;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <p class="section-title">🧠 Mapa mental ilustrado</p>
+        <button class="btn-ghost no-print" data-report="mapa">Reportar</button>
+      </div>
+      ${a.mapaImage
+        ? `<img src="${a.mapaImage}" alt="Pôster de estudo ilustrado sobre ${escapeHtml(a.subject)}" style="width:100%;border-radius:8px;display:block">`
+        : a.mapa.map(n=>`<div class="map-node"><span class="em">${n.emoji||'⭐'}</span><span style="font-size:13px">${escapeHtml(n.label)}</span></div>`).join('')}
+    </div>
+
+    <div class="card" style="background:var(--bg);border:none">
+      <p class="section-title">✅ Simulado (${a.questoes.length} questões)</p>
+      ${a.questoes.map((q,i)=>`<div class="q-row">
+        <div class="q-top">
+          <p><strong>${i+1}.</strong> ${escapeHtml(q.pergunta)}</p>
+          <button class="btn-danger no-print" data-del-q="${i}" aria-label="Deletar questão">✕</button>
+        </div>
+        <div class="q-opts">${q.opcoes.map((o,oi)=>`${String.fromCharCode(97+oi)}) ${escapeHtml(o)}`).join(' &nbsp; ')}</div>
+      </div>`).join('')}
+    </div>
+
+    <div class="row no-print" style="margin-top:14px">
+      <button class="btn btn-block" id="print-btn">🖨️ Imprimir / PDF</button>
+      <button class="btn btn-primary btn-block" id="save-activity-btn">${isCurrent?'💾 Salvar no histórico':''}</button>
+    </div>
+  </div>`;
+  return h;
+}
+
+function renderHistorico(){
+  const child = activeChild();
+  if(!child) return `<div class="card empty"><span class="em">🙈</span>Cadastre um filho primeiro.</div>`;
+  const acts = state.activities[child.id]||[];
+  let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px">
+    <h2 style="font-size:17px">Histórico</h2>
+    ${state.children.length>1?`<select id="switch-child-hist" style="width:auto">${state.children.map(c=>`<option value="${c.id}" ${c.id===child.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>`:`<span style="font-size:13px;color:var(--sub)">${escapeHtml(child.name)}</span>`}
+  </div>`;
+  if(!acts.length){ h += `<div class="card empty"><span class="em">🗂️</span>Nenhuma atividade salva ainda.</div>`; return h; }
+  if(state.openHistoryId){
+    const a = acts.find(x=>x.id===state.openHistoryId);
+    if(a){
+      h += `<button class="btn-ghost no-print" id="back-hist" style="margin-bottom:10px">← Voltar ao histórico</button>`;
+      h += renderActivityResult(a, false);
+      return h;
+    }
+  }
+  for(const a of acts.slice().reverse()){
+    h += `<div class="hist-item" data-open-hist="${a.id}">
+      <div><strong style="font-size:14px">${escapeHtml(a.subject)}</strong><br><small style="color:var(--sub)">${new Date(a.createdAt).toLocaleDateString('pt-BR')} · ${a.questoes.length} questões</small></div>
+      <span style="color:var(--sub)">›</span>
+    </div>`;
+  }
+  return h;
+}
+
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---------- events ----------
+let pendingPhoto = null; // {base64, mediaType}
+let newChildPrefs = new Set();
+
+function bindEvents(){
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = ()=>{ state.view=b.dataset.tab; state.currentActivity=null; state.error=null; render(); });
+  document.querySelectorAll('[data-select-child]').forEach(el=>el.onclick=()=>{ state.activeChildId = el.dataset.selectChild; render(); });
+
+  const toggleAdd = document.getElementById('toggle-add-child');
+  if(toggleAdd) toggleAdd.onclick = ()=>{ state.showAddChild = !state.showAddChild; render(); };
+
+  const ageSlider = document.getElementById('new-age');
+  if(ageSlider) ageSlider.oninput = ()=> document.getElementById('age-out').textContent = ageSlider.value;
+
+  document.querySelectorAll('[data-pref]').forEach(chip=>{
+    chip.classList.toggle('on', newChildPrefs.has(chip.dataset.pref));
+    chip.onclick = ()=>{ 
+      if(newChildPrefs.has(chip.dataset.pref)) newChildPrefs.delete(chip.dataset.pref); else newChildPrefs.add(chip.dataset.pref);
+      chip.classList.toggle('on');
+    };
+  });
+
+  const addBtn = document.getElementById('add-child-btn');
+  if(addBtn) addBtn.onclick = async ()=>{
+    const name = document.getElementById('new-name').value.trim();
+    const age = parseInt(document.getElementById('new-age').value,10);
+    const school = document.getElementById('new-school').value.trim();
+    const errEl = document.getElementById('add-child-err');
+    if(!name){ errEl.textContent='Digite o nome da criança.'; errEl.style.display='block'; return; }
+    const child = {id:'c'+Date.now(), name, age, school, prefs:[...newChildPrefs]};
+    state.children.push(child);
+    state.activeChildId = child.id;
+    state.activities[child.id] = [];
+    newChildPrefs = new Set();
+    state.showAddChild = false;
+    await saveChildren();
+    render();
+  };
+
+  const switchSel = document.getElementById('switch-child');
+  if(switchSel) switchSel.onchange = ()=>{ state.activeChildId = switchSel.value; state.currentActivity=null; render(); };
+
+  const switchSelHist = document.getElementById('switch-child-hist');
+  if(switchSelHist) switchSelHist.onchange = ()=>{ state.activeChildId = switchSelHist.value; state.openHistoryId=null; render(); };
+
+
+  const cameraInput = document.getElementById('camera-input');
+  const fileInput = document.getElementById('file-input');
+  function handleFile(file){
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      pendingPhoto = {base64: reader.result.split(',')[1], mediaType: file.type, isPdf: file.type==='application/pdf'};
+      const preview = document.getElementById('upload-preview');
+      if(pendingPhoto.isPdf){
+        preview.innerHTML = `<div class="badge">📄 ${escapeHtml(file.name)} anexado</div>`;
+      } else {
+        preview.innerHTML = `<img src="${reader.result}" alt="Foto selecionada" style="max-width:100%;border-radius:8px">`;
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+  if(cameraInput) cameraInput.onchange = ()=> handleFile(cameraInput.files[0]);
+  if(fileInput) fileInput.onchange = ()=> handleFile(fileInput.files[0]);
+
+  const countInput = document.getElementById('count-input');
+  if(countInput) countInput.oninput = ()=> document.getElementById('count-out').textContent = countInput.value;
+
+  const genBtn = document.getElementById('generate-btn');
+  if(genBtn) genBtn.onclick = async ()=>{
+    const subject = document.getElementById('subject-input').value.trim();
+    const errEl = document.getElementById('gen-err');
+    if(!subject){ errEl.textContent='Digite o assunto da prova.'; errEl.style.display='block'; return; }
+    const count = parseInt(document.getElementById('count-input').value,10);
+    state.loading = true; state.error = null; state.loadingMsg = 'Gerando conteúdo com IA...'; render();
+    try{
+      const result = await generateActivity(subject, pendingPhoto?pendingPhoto.base64:null, pendingPhoto?pendingPhoto.mediaType:null, pendingPhoto?pendingPhoto.isPdf:false, count);
+
+      state.loadingMsg = 'Revisando o texto...'; render();
+      const mapaLabels = result.mapa.map(n=>n.label);
+      const revised = await proofreadTexts([result.resumo, ...mapaLabels]);
+      const resumoRevisado = revised[0] || result.resumo;
+      const mapaRevisado = result.mapa.map((n,i)=>({...n, label: revised[i+1]||n.label}));
+
+      state.currentActivity = { id:'a'+Date.now(), subject, createdAt: Date.now(), resumo: resumoRevisado, resumoVersions:[resumoRevisado], mapa: mapaRevisado, mapaVersions:[mapaRevisado], mapaImage:null, questoes: result.questoes };
+      state.loadingMsg = 'Desenhando o pôster ilustrado...'; render();
+      try{
+        const child = activeChild();
+        const prefsText = child.prefs.map(prefLabel).join(', ');
+        state.currentActivity.mapaImage = await callNanoBanana(buildPosterPrompt(subject, resumoRevisado, mapaRevisado, prefsText, child.age));
+      }catch(e){ console.warn('poster falhou', e); window.__toast = 'Não consegui gerar o pôster ilustrado agora. O mapa mental ficou em formato de lista.'; setTimeout(()=>{window.__toast=null;render();},4500); }
+    }catch(e){
+      console.error(e);
+      state.error = 'Não consegui gerar o conteúdo agora. Tente novamente.';
+    }
+    state.loading = false; pendingPhoto = null; render();
+  };
+
+  const newActBtn = document.getElementById('new-activity-btn');
+  if(newActBtn) newActBtn.onclick = ()=>{ state.currentActivity = null; render(); };
+
+  document.querySelectorAll('[data-report]').forEach(b=>b.onclick = ()=> openReportModal(b.dataset.report));
+
+  document.querySelectorAll('[data-del-q]').forEach(b=>b.onclick = async ()=>{
+    const i = parseInt(b.dataset.delQ,10);
+    const a = state.currentActivity || findOpenHistoryActivity();
+    a.questoes.splice(i,1);
+    render();
+    try{
+      const q = await regenerateQuestion(a);
+      a.questoes.splice(i,0,q);
+    }catch(e){ console.error(e); }
+    render();
+  });
+
+  const printBtn = document.getElementById('print-btn');
+  if(printBtn) printBtn.onclick = ()=> window.print();
+
+  const saveBtn = document.getElementById('save-activity-btn');
+  if(saveBtn) saveBtn.onclick = async ()=>{
+    const child = activeChild();
+    state.activities[child.id] = state.activities[child.id]||[];
+    state.activities[child.id].push(state.currentActivity);
+    await saveActivities(child.id);
+    state.currentActivity = null;
+    state.view = 'historico';
+    render();
+  };
+
+  document.querySelectorAll('[data-open-hist]').forEach(el=>el.onclick = ()=>{ state.openHistoryId = el.dataset.openHist; render(); });
+  const backHist = document.getElementById('back-hist');
+  if(backHist) backHist.onclick = ()=>{ state.openHistoryId = null; render(); };
+}
+
+function findOpenHistoryActivity(){
+  const child = activeChild();
+  return (state.activities[child.id]||[]).find(a=>a.id===state.openHistoryId);
+}
+
+function openReportModal(part){
+  window.__modal = `<div class="modal-bg" id="modal-bg"><div class="modal">
+    <h3 style="font-size:16px;margin-bottom:10px">O que deu errado?</h3>
+    <textarea id="feedback-text" placeholder="Ex: muito difícil para a idade, informação errada, texto longo demais..."></textarea>
+    <p class="err" id="modal-err" style="display:none"></p>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="modal-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="modal-send">Gerar de novo</button>
+    </div>
+  </div></div>`;
+  render();
+  document.getElementById('modal-cancel').onclick = ()=>{ window.__modal=null; render(); };
+  document.getElementById('modal-send').onclick = async ()=>{
+    const fb = document.getElementById('feedback-text').value.trim();
+    const errEl = document.getElementById('modal-err');
+    if(!fb){ errEl.textContent='Conte rapidamente o que estava errado.'; errEl.style.display='block'; return; }
+    window.__modal = null;
+    const a = state.currentActivity || findOpenHistoryActivity();
+    state.loading = true; state.loadingMsg = part==='mapa' && a.mapaImage ? 'Redesenhando o pôster...' : 'Gerando de novo...'; render();
+    try{
+      if(part==='mapa' && a.mapaImage){
+        const child = activeChild();
+        const prefsText = child.prefs.map(prefLabel).join(', ');
+        const newImg = await callNanoBanana(buildPosterPrompt(a.subject, a.resumo, a.mapa, prefsText, child.age, fb));
+        a.mapaVersions.push(a.mapaImage);
+        a.mapaImage = newImg;
+      } else {
+        const result = await regenerateWithFeedback(part, a, fb);
+        if(part==='resumo'){ a.resumo = result.resumo; a.resumoVersions.push(result.resumo); }
+        else { a.mapa = result.mapa; a.mapaVersions.push(result.mapa); }
+      }
+    }catch(e){ console.error(e); window.__toast = 'Não consegui gerar de novo agora. Tente mais uma vez.'; setTimeout(()=>{window.__toast=null;render();},4000); }
+    state.loading = false; render();
+  };
+}
+
+// ---------- init ----------
+(async function init(){
+  app.innerHTML = '<div class="loading">Carregando...</div>';
+  await loadState();
+  render();
+})();
+</script>
+</body>
+</html>
