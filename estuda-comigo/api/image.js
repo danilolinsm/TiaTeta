@@ -20,7 +20,8 @@ module.exports = async function handler(req, res) {
     });
     const data = await r.json();
     if (data.error) {
-      res.status(500).json({ error: data.error.message });
+      console.error('Erro da API do Gemini (imagem):', JSON.stringify(data.error));
+      res.status(500).json({ error: typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error)) });
       return;
     }
     const parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
