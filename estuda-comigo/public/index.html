@@ -173,9 +173,13 @@ async function generateActivity(subject, files, count){
   const child = activeChild();
   const prefsText = child.prefs.map(prefLabel).join(', ');
   const hasFiles = files && files.length;
-  const prompt = `Você é um assistente pedagógico ajudando uma mãe a preparar a(o) filha(o) de ${child.age} anos (faixa etária ${ageBand(child.age)}) para uma prova sobre "${subject}".
+  const sourceInstruction = hasFiles
+    ? `Foram anexados ${files.length} arquivo(s) (páginas do livro e/ou aviso da prova). ESSES ARQUIVOS SÃO A ÚNICA FONTE DE VERDADE do conteúdo — extraia o resumo, os conceitos do mapa mental e as questões do simulado exclusivamente do que está escrito/ilustrado neles. O campo "assunto" abaixo é só um rótulo/contexto dado pela mãe para ajudar a localizar o tema dentro dos arquivos — NÃO use conhecimento geral sobre esse assunto para complementar ou substituir o que está nos arquivos. Se o assunto informado não bater exatamente com o conteúdo dos arquivos, priorize sempre o que está nos arquivos.`
+    : `Não há arquivo anexado. Baseie-se no assunto informado abaixo, usando conhecimento pedagógico geral adequado à série escolar da criança.`;
+  const prompt = `Você é um assistente pedagógico ajudando uma mãe a preparar a(o) filha(o) de ${child.age} anos (faixa etária ${ageBand(child.age)}) para uma prova.
 A criança gosta de: ${prefsText || 'nenhuma preferência informada'}.
-${hasFiles? `Use os ${files.length} arquivo(s) anexos (páginas do livro e/ou aviso da prova) como fonte do conteúdo.` : 'Baseie-se apenas no assunto informado, pois não há arquivo anexo.'}
+Assunto informado pela mãe (rótulo/contexto): "${subject}".
+${sourceInstruction}
 
 Gere um JSON (APENAS o JSON, sem texto antes ou depois, sem markdown) no seguinte formato:
 {
@@ -292,8 +296,9 @@ function renderEstudar(){
   if(!state.currentActivity){
     h += `<div class="card">
       <p class="section-title">🖼️ Nova atividade</p>
-      <label class="field-label">Assunto da prova</label>
-      <input type="text" id="subject-input" placeholder="Ex: ciclo da água, tabuada do 7..." style="margin-bottom:12px">
+      <label class="field-label">Assunto da prova (rótulo — não substitui o material)</label>
+      <input type="text" id="subject-input" placeholder="Ex: ciclo da água, tabuada do 7..." style="margin-bottom:6px">
+      <p style="font-size:11px;color:var(--sub);margin:0 0 12px">💡 Se anexar foto/PDF, o conteúdo é gerado a partir do material — esse campo é só um rótulo para ajudar a localizar o tema.</p>
       <label class="field-label">Fotos ou PDF da página do livro (opcional, até 20 arquivos)</label>
       <div id="upload-preview" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px"></div>
       <div class="row" style="margin-bottom:12px">
@@ -338,6 +343,7 @@ function renderActivityResult(a, isCurrent){
         <p class="section-title">🧠 Mapa mental ilustrado</p>
         <button class="btn-ghost no-print" data-report="mapa">Reportar</button>
       </div>
+      ${a.mapaError ? `<p class="err no-print" style="margin-bottom:8px">⚠️ Pôster ilustrado falhou — mostrando lista. Detalhe: ${escapeHtml(a.mapaError)}</p>` : ''}
       ${a.mapaImage
         ? `<img src="${a.mapaImage}" alt="Pôster de estudo ilustrado sobre ${escapeHtml(a.subject)}" style="width:100%;border-radius:8px;display:block">`
         : a.mapa.map(n=>`<div class="map-node"><span class="em">${n.emoji||'⭐'}</span><span style="font-size:13px">${escapeHtml(n.label)}</span></div>`).join('')}
@@ -496,7 +502,7 @@ function bindEvents(){
         const child = activeChild();
         const prefsText = child.prefs.map(prefLabel).join(', ');
         state.currentActivity.mapaImage = await callNanoBanana(buildPosterPrompt(subject, resumoRevisado, mapaRevisado, prefsText, child.age));
-      }catch(e){ console.warn('poster falhou', e); window.__toast = 'Não consegui gerar o pôster ilustrado agora. O mapa mental ficou em formato de lista.'; setTimeout(()=>{window.__toast=null;render();},4500); }
+      }catch(e){ console.warn('poster falhou', e); state.currentActivity.mapaError = e.message || 'erro desconhecido'; }
     }catch(e){
       console.error(e);
       state.error = 'Não consegui gerar o conteúdo agora. Detalhe: ' + (e.message || 'erro desconhecido');
