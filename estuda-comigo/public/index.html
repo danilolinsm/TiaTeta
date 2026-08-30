@@ -3,49 +3,66 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Estuda Comigo</title>
+<title>Tia Teta</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
-    --bg:#FBF8F2; --card:#FFFFFF; --ink:#22303C; --sub:#5C6B73;
-    --teal:#2F6D5D; --teal-dark:#1F4B3F; --amber:#F2A65A; --amber-dark:#8A5423;
-    --line:#E4DFD3; --danger:#C0483E;
-    --r:14px;
+    --bg:#F6F3EC; --card:#FFFFFF; --ink:#22303C; --sub:#5C6B73;
+    --teal:#2F6D5D; --teal-dark:#1A3F35; --teal-soft:#E8F0EC;
+    --mustard:#E8A33D; --mustard-dark:#8A5A16;
+    --line:#E9E4D8; --danger:#C0483E;
+    --shadow-sm:0 1px 2px rgba(26,63,53,0.06), 0 1px 1px rgba(26,63,53,0.04);
+    --shadow-md:0 4px 14px rgba(26,63,53,0.08), 0 1px 3px rgba(26,63,53,0.06);
+    --r:16px;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased}
   h1,h2,h3{font-family:'Fraunces',serif;font-weight:600;margin:0}
   button{font-family:'Inter',sans-serif;cursor:pointer}
-  #app{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);padding-bottom:76px;position:relative}
-  header.top{padding:20px 18px 12px;display:flex;align-items:center;gap:10px}
-  header.top h1{font-size:22px;color:var(--teal-dark)}
-  header.top span{font-size:22px}
-  .view{padding:0 18px 18px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
-  .btn{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 14px;font-size:14px;font-weight:500;color:var(--ink)}
+  #app{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);padding-bottom:84px;position:relative}
+  header.top{
+    padding:22px 18px 26px;display:flex;align-items:center;gap:12px;
+    background:linear-gradient(155deg, var(--teal) 0%, var(--teal-dark) 100%);
+    border-radius:0 0 22px 22px; box-shadow:var(--shadow-md); position:relative; z-index:2;
+  }
+  header.top h1{font-size:21px;color:#fff;letter-spacing:0.2px}
+  header.top .subtitle{font-size:11px;color:rgba(255,255,255,0.72);margin-top:1px}
+  .lang-toggle{display:flex;border:1px solid rgba(255,255,255,0.4);border-radius:8px;overflow:hidden}
+  .lang-toggle button{background:none;border:none;color:rgba(255,255,255,0.75);font-size:11px;font-weight:600;padding:5px 8px}
+  .lang-toggle button.on{background:rgba(255,255,255,0.92);color:var(--teal-dark)}
+  .mascot{
+    width:42px;height:42px;border-radius:50%;background:var(--mustard);flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;font-family:'Fraunces',serif;font-weight:600;
+    box-shadow:0 0 0 2.5px rgba(255,255,255,0.5); overflow:hidden;
+  }
+  .mascot img{width:100%;height:100%;object-fit:cover}
+  .view{padding:16px 16px 18px;margin-top:-14px;position:relative;z-index:1}
+  .card{background:var(--card);border:none;box-shadow:var(--shadow-sm);border-radius:var(--r);padding:17px;margin-bottom:14px}
+  .btn{border:1px solid var(--line);background:var(--card);border-radius:11px;padding:11px 14px;font-size:14px;font-weight:500;color:var(--ink);box-shadow:var(--shadow-sm);transition:transform .1s}
   .btn:active{transform:scale(0.98)}
-  .btn-primary{background:var(--teal);color:#fff;border:none}
-  .btn-danger{background:none;border:none;color:var(--danger);padding:4px}
-  .btn-ghost{background:none;border:none;color:var(--sub);font-size:13px}
+  .btn-primary{background:var(--teal);color:#fff;border:none;box-shadow:0 2px 8px rgba(47,109,93,0.35)}
+  .btn-danger{background:none;border:none;color:var(--danger);padding:4px;box-shadow:none}
+  .btn-ghost{background:none;border:none;color:var(--sub);font-size:13px;box-shadow:none}
   .btn-block{width:100%}
   input[type=text],input[type=number],input[type=password],input[type=email],textarea,select{
-    width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-family:'Inter',sans-serif;color:var(--ink)
+    width:100%;font-size:15px;padding:11px 13px;border:1.5px solid var(--line);border-radius:11px;background:#fff;font-family:'Inter',sans-serif;color:var(--ink)
   }
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
   textarea{resize:vertical;min-height:70px}
-  label.field-label{font-size:12px;color:var(--sub);display:block;margin:0 0 6px}
-  .chip{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:20px;border:1px solid var(--line);background:#fff;font-size:13px;margin:0 6px 6px 0}
-  .chip.on{background:var(--amber);border-color:var(--amber-dark);color:#4A2E10;font-weight:500}
-  .child-row{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;border:1px solid var(--line);background:#fff;margin-bottom:10px}
-  .child-row.active{border:2px solid var(--teal)}
-  .avatar{width:42px;height:42px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+  label.field-label{font-size:12px;color:var(--sub);display:block;margin:0 0 6px;font-weight:500}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:20px;border:1.5px solid var(--line);background:#fff;font-size:13px;margin:0 6px 6px 0}
+  .chip.on{background:var(--mustard);border-color:var(--mustard-dark);color:#4A2E10;font-weight:600;box-shadow:0 2px 6px rgba(232,163,61,0.35)}
+  .child-row{display:flex;align-items:center;gap:12px;padding:13px;border-radius:14px;border:1.5px solid var(--line);background:#fff;margin-bottom:10px;box-shadow:var(--shadow-sm)}
+  .child-row.active{border:2px solid var(--teal); box-shadow:0 0 0 3px var(--teal-soft)}
+  .avatar{width:42px;height:42px;border-radius:50%;background:var(--mustard);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
   .child-meta{flex:1}
   .child-meta strong{font-size:14px;display:block}
   .child-meta small{color:var(--sub);font-size:12px}
-  nav.tabs{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;max-width:480px;margin:0 auto}
+  nav.tabs{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;max-width:480px;margin:0 auto;box-shadow:0 -2px 10px rgba(26,63,53,0.06)}
   nav.tabs button{flex:1;background:none;border:none;padding:12px 0 10px;font-size:11px;color:var(--sub);display:flex;flex-direction:column;align-items:center;gap:4px}
-  nav.tabs button.active{color:var(--teal)}
+  nav.tabs button.active{color:var(--teal);font-weight:600}
   .icon{width:20px;height:20px;display:inline-block}
   .upload-box{border:2px dashed var(--line);border-radius:12px;padding:26px 12px;text-align:center;color:var(--sub);font-size:13px}
   .upload-box img{max-width:100%;border-radius:8px;margin-bottom:8px}
@@ -134,7 +151,50 @@ async function persistIfSaved(a){
 }
 
 // ---------- state ----------
-let state = { session:null, user:null, authMode:'login', authError:null, children: [], activeChildId: null, activities: {}, view: 'filhos', loading:false, error:null };
+let state = { session:null, user:null, authMode:'login', authError:null, lang:(localStorage.getItem('tt_lang')||'pt'), children: [], activeChildId: null, activities: {}, view: 'filhos', loading:false, error:null };
+
+// ---------- idioma da interface ----------
+const I18N = {
+  pt:{
+    tab_filhos:'Filhos', tab_estudar:'Estudar', tab_historico:'Histórico',
+    logout:'Sair', login:'Entrar', signup:'Criar conta', or_login:'Já tenho conta — entrar', or_signup:'Não tenho conta — criar',
+    email:'Email', password:'Senha', auth_subtitle:'Seus filhos e o histórico ficam salvos com segurança e acessíveis de qualquer aparelho.',
+    my_kids:'Meus filhos', add_child:'Adicionar filho', add_another:'+ Adicionar outro filho', close:'fechar ▲',
+    name:'Nome', age:'Idade', school:'Colégio (opcional)', prefs_q:'O que ele(a) adora?',
+    new_activity:'Nova atividade', subject:'Assunto da prova (rótulo — não substitui o material)',
+    subject_hint:'💡 Se anexar foto/PDF, o conteúdo é gerado a partir do material — esse campo é só um rótulo para ajudar a localizar o tema.',
+    files_label:'Fotos ou PDF da página do livro (opcional, até 20 arquivos)',
+    take_photo:'📷 Tirar foto', attach:'📎 Anexar arquivos',
+    illustrate_q:'🖼️ Ilustrar as questões do simulado com desenhos',
+    illustrate_q_hint:'(mais lento — pode levar alguns minutos — e usa mais cota de imagem da sua conta Gemini)',
+    q_count:'Quantidade de questões do simulado:', generate:'Gerar estratégias de estudo',
+    ai_warn:'⚠️ O conteúdo é gerado por IA e pode conter erros. Revise antes de usar com a criança.',
+    resumo:'📄 Resumo fácil', mapa:'🧠 Mapa mental ilustrado', simulado:'✅ Simulado',
+    report:'Reportar', print:'🖨️ Imprimir / PDF', save_history:'💾 Salvar no histórico',
+    history:'Histórico', no_history:'Nenhuma atividade salva ainda.', no_child:'Cadastre seu primeiro filho para começar.',
+    back:'← Voltar ao histórico',
+  },
+  en:{
+    tab_filhos:'My Kids', tab_estudar:'Study', tab_historico:'History',
+    logout:'Log out', login:'Log in', signup:'Sign up', or_login:'Already have an account — log in', or_signup:"Don't have an account — sign up",
+    email:'Email', password:'Password', auth_subtitle:'Your kids and study history are saved securely and available on any device.',
+    my_kids:'My kids', add_child:'Add child', add_another:'+ Add another child', close:'close ▲',
+    name:'Name', age:'Age', school:'School (optional)', prefs_q:'What do they love?',
+    new_activity:'New activity', subject:'Test subject (label — does not replace the material)',
+    subject_hint:"💡 If you attach a photo/PDF, the content is generated from the material — this field is just a label to help locate the topic.",
+    files_label:'Photos or PDF of the book page (optional, up to 20 files)',
+    take_photo:'📷 Take photo', attach:'📎 Attach files',
+    illustrate_q:'🖼️ Illustrate the quiz questions with drawings',
+    illustrate_q_hint:'(slower — can take a few minutes — and uses more image quota on your Gemini account)',
+    q_count:'Number of quiz questions:', generate:'Generate study strategies',
+    ai_warn:'⚠️ This content is AI-generated and may contain errors. Review before using with your child.',
+    resumo:'📄 Easy summary', mapa:'🧠 Illustrated mind map', simulado:'✅ Practice quiz',
+    report:'Report issue', print:'🖨️ Print / PDF', save_history:'💾 Save to history',
+    history:'History', no_history:'No saved activities yet.', no_child:'Add your first child to get started.',
+    back:'← Back to history',
+  }
+};
+function t(key){ return (I18N[state.lang||'pt'] && I18N[state.lang||'pt'][key]) || I18N.pt[key] || key; }
 
 const PREF_OPTIONS = [
   {id:'dino', label:'Dinossauros', em:'🦕'},
@@ -208,18 +268,54 @@ async function callNanoBanana(promptText, signal){
   return data.dataUrl;
 }
 
+function buildQuestionImagePrompt(questionText, prefsText, age, feedback){
+  let p = `Crie UMA ilustração simples, estilo desenho animado infantil colorido, quadrada, sem nenhum texto ou letra dentro da imagem, representando o tema desta questão de prova para uma criança de ${age} anos: "${questionText}".
+${prefsText ? `Se fizer sentido, incorpore elementos de ${prefsText} de forma sutil, sem distrair do conteúdo da questão.` : ''}
+A imagem deve ser clara, objetiva e ajudar a criança a entender visualmente o que a questão está perguntando — não pode ter elementos assustadores, confusos ou fora do tema.`;
+  if(feedback) p += `\n\nAjuste pedido na revisão: ${feedback}`;
+  return p;
+}
+
+async function verifyImageWithClaude(dataUrl, questionText){
+  const base64 = dataUrl.split(',')[1];
+  const prompt = `Você está revisando uma ilustração gerada por IA para uma questão de prova infantil. Contexto da questão: "${questionText}".
+Verifique: (1) a imagem é apropriada para crianças, sem nada assustador ou confuso; (2) ela representa razoavelmente o tema da questão (não precisa ser perfeita, só coerente); (3) não tem texto ilegível, errado ou fora do lugar atrapalhando.
+Responda APENAS em JSON, sem markdown: {"ok": true ou false, "motivo": "breve explicação em poucas palavras"}`;
+  return await callClaude(prompt, [{ base64, mediaType:'image/jpeg', isPdf:false }]);
+}
+
+async function illustrateQuestions(activity, prefsText, age){
+  const total = activity.questoes.length;
+  for(let i=0;i<total;i++){
+    state.loadingMsg = `Ilustrando questão ${i+1}/${total}...`; render();
+    const q = activity.questoes[i];
+    try{
+      let img = await callNanoBanana(buildQuestionImagePrompt(q.pergunta, prefsText, age));
+      let check = { ok:true };
+      try{ check = await verifyImageWithClaude(img, q.pergunta); }catch(e){ /* se a revisão falhar, mantém a imagem sem bloquear */ }
+      if(check && check.ok===false){
+        state.loadingMsg = `Corrigindo ilustração da questão ${i+1}/${total}...`; render();
+        try{ img = await callNanoBanana(buildQuestionImagePrompt(q.pergunta, prefsText, age, check.motivo)); }catch(e){ /* mantém a primeira versão se a segunda falhar */ }
+      }
+      q.imagem = img;
+    }catch(e){
+      console.warn('ilustração da questão '+(i+1)+' falhou', e);
+    }
+  }
+}
+
 
 function buildPosterPrompt(subject, resumoText, mapaNodes, prefsText, age, feedback){
   let p = `Crie um pôster de estudos ilustrado, estilo desenho animado infantil colorido e alegre, formato retrato A4, para uma criança de ${age} anos que gosta de ${prefsText||'temas lúdicos'}.
 Assunto: "${subject}".
-Título grande no topo com o nome do assunto.
-Abaixo do título, um pequeno guia numerado: "1. Resumo  2. Mapa mental  3. Questões para praticar".
+IMPORTANTE: identifique o idioma usado no resumo abaixo e escreva TODO o texto do pôster (título, guia, legendas, faixa final) nesse mesmo idioma — não traduza para português se o resumo estiver em outro idioma.
+Abaixo do título, um pequeno guia numerado equivalente a "1. Resumo  2. Mapa mental  3. Questões para praticar" (traduzido para o idioma do resumo).
 Ilustre uma cena temática grande e cheia de detalhes relacionada ao assunto, incorporando elementos de ${prefsText||'algo lúdico'} quando fizer sentido.
-Distribua pelo pôster pequenas caixas de texto ou placas explicando estes conceitos, em português correto e curto:
+Distribua pelo pôster pequenas caixas de texto ou placas explicando estes conceitos, com texto curto e correto no mesmo idioma do resumo:
 ${mapaNodes.map(n=>`- ${n.label}`).join('\n')}
 Baseie as explicações neste resumo: """${(resumoText||'').slice(0,500)}"""
-No rodapé, inclua uma faixa com o texto "QUESTÕES PARA PRATICAR".
-Todo texto deve estar em português, bem legível, sem erros de ortografia. Cores vivas, sem elementos assustadores.`;
+No rodapé, inclua uma faixa equivalente a "QUESTÕES PARA PRATICAR" no idioma do resumo.
+Texto bem legível, sem erros de ortografia. Cores vivas, sem elementos assustadores.`;
   if(feedback) p += `\n\nAjuste pedido pela mãe: ${feedback}`;
   return p;
 }
@@ -231,10 +327,15 @@ async function generateActivity(subject, files, count){
   const sourceInstruction = hasFiles
     ? `Foram anexados ${files.length} arquivo(s) (páginas do livro e/ou aviso da prova). ESSES ARQUIVOS SÃO A ÚNICA FONTE DE VERDADE do conteúdo — extraia o resumo, os conceitos do mapa mental e as questões do simulado exclusivamente do que está escrito/ilustrado neles. O campo "assunto" abaixo é só um rótulo/contexto dado pela mãe para ajudar a localizar o tema dentro dos arquivos — NÃO use conhecimento geral sobre esse assunto para complementar ou substituir o que está nos arquivos. Se o assunto informado não bater exatamente com o conteúdo dos arquivos, priorize sempre o que está nos arquivos.`
     : `Não há arquivo anexado. Baseie-se no assunto informado abaixo, usando conhecimento pedagógico geral adequado à série escolar da criança.`;
+  const fallbackLang = state.lang==='en' ? 'inglês' : 'português do Brasil';
+  const langInstruction = hasFiles
+    ? `Identifique automaticamente o idioma predominante do texto nos arquivos anexados, e gere TODO o conteúdo (resumo, mapa mental, questões e alternativas) nesse mesmo idioma — mesmo que seja diferente do idioma desta instrução. Se por algum motivo não conseguir identificar um idioma claro nos arquivos, use ${fallbackLang}.`
+    : `Gere todo o conteúdo em ${fallbackLang}.`;
   const prompt = `Você é um assistente pedagógico ajudando uma mãe a preparar a(o) filha(o) de ${child.age} anos (faixa etária ${ageBand(child.age)}) para uma prova.
 A criança gosta de: ${prefsText || 'nenhuma preferência informada'}.
 Assunto informado pela mãe (rótulo/contexto): "${subject}".
 ${sourceInstruction}
+${langInstruction}
 
 Gere um JSON (APENAS o JSON, sem texto antes ou depois, sem markdown) no seguinte formato:
 {
@@ -283,45 +384,74 @@ function iconSvg(name){
   return icons[name]||'';
 }
 
+function mascotHeader(withLogout){
+  return `<header class="top" style="justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="mascot"><img src="/mascot.jpg" alt="" onerror="this.style.display='none'; this.parentElement.textContent='TT';"></div>
+      <div><h1>Tia Teta</h1><p class="subtitle">Sua parceira pra ajudar nos estudos</p></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="lang-toggle no-print" role="group" aria-label="Idioma">
+        <button data-lang="pt" class="${(state.lang||'pt')==='pt'?'on':''}">PT</button>
+        <button data-lang="en" class="${state.lang==='en'?'on':''}">EN</button>
+      </div>
+      ${withLogout ? `<button class="btn-ghost no-print" id="logout-btn" style="color:rgba(255,255,255,0.85)">${t('logout')}</button>` : ''}
+    </div>
+  </header>`;
+}
+
 function render(){
   if(!state.session){
-    app.innerHTML = `<header class="top"><span>📚</span><h1>Estuda Comigo</h1></header>` + renderAuthScreen();
+    app.innerHTML = mascotHeader() + renderAuthScreen();
     bindAuthEvents();
+    bindLangToggle();
     return;
   }
-  let html = `<header class="top" style="justify-content:space-between"><div style="display:flex;align-items:center;gap:10px"><span>📚</span><h1>Estuda Comigo</h1></div><button class="btn-ghost no-print" id="logout-btn">Sair</button></header>`;
+  let html = mascotHeader(true);
   html += `<div class="view">`;
   if(state.view==='filhos') html += renderFilhos();
   if(state.view==='estudar') html += renderEstudar();
   if(state.view==='historico') html += renderHistorico();
   html += `</div>`;
   html += `<nav class="tabs no-print">
-    <button data-tab="filhos" class="${state.view==='filhos'?'active':''}">${iconSvg('filhos')}Filhos</button>
-    <button data-tab="estudar" class="${state.view==='estudar'?'active':''}">${iconSvg('estudar')}Estudar</button>
-    <button data-tab="historico" class="${state.view==='historico'?'active':''}">${iconSvg('historico')}Histórico</button>
+    <button data-tab="filhos" class="${state.view==='filhos'?'active':''}">${iconSvg('filhos')}${t('tab_filhos')}</button>
+    <button data-tab="estudar" class="${state.view==='estudar'?'active':''}">${iconSvg('estudar')}${t('tab_estudar')}</button>
+    <button data-tab="historico" class="${state.view==='historico'?'active':''}">${iconSvg('historico')}${t('tab_historico')}</button>
   </nav>`;
   if(window.__modal) html += window.__modal;
   if(window.__toast) html += `<div class="no-print" style="position:fixed;bottom:76px;left:12px;right:12px;max-width:456px;margin:0 auto;background:var(--ink);color:#fff;font-size:12px;padding:10px 14px;border-radius:10px;z-index:30">${window.__toast}</div>`;
   app.innerHTML = html;
   bindEvents();
+  bindLangToggle();
   const logoutBtn = document.getElementById('logout-btn');
   if(logoutBtn) logoutBtn.onclick = async ()=>{ await db.auth.signOut(); };
+}
+
+function bindLangToggle(){
+  document.querySelectorAll('[data-lang]').forEach(b=>b.onclick = ()=>{
+    state.lang = b.dataset.lang;
+    localStorage.setItem('tt_lang', state.lang);
+    render();
+  });
 }
 
 function renderAuthScreen(){
   const signup = state.authMode==='signup';
   return `<div class="view">
-    <div class="card" style="margin-top:20px">
-      <h2 style="font-size:18px;margin-bottom:4px">${signup?'Criar conta':'Entrar'}</h2>
-      <p style="font-size:12px;color:var(--sub);margin:0 0 14px">Seus filhos e o histórico ficam salvos com segurança e acessíveis de qualquer aparelho.</p>
-      <label class="field-label">Email</label>
+    <div style="text-align:center;margin:6px 0 16px">
+      <img src="/mascot-boasvindas.jpg" alt="Tia Teta" style="width:150px;border-radius:16px;box-shadow:var(--shadow-md)">
+    </div>
+    <div class="card" style="margin-top:0">
+      <h2 style="font-size:18px;margin-bottom:4px">${signup?t('signup'):t('login')}</h2>
+      <p style="font-size:12px;color:var(--sub);margin:0 0 14px">${t('auth_subtitle')}</p>
+      <label class="field-label">${t('email')}</label>
       <input type="email" id="auth-email" placeholder="seu@email.com" style="margin-bottom:10px">
-      <label class="field-label">Senha</label>
+      <label class="field-label">${t('password')}</label>
       <input type="password" id="auth-password" placeholder="Mínimo 6 caracteres" style="margin-bottom:14px">
-      <button class="btn btn-primary btn-block" id="auth-submit">${signup?'Criar conta':'Entrar'}</button>
+      <button class="btn btn-primary btn-block" id="auth-submit">${signup?t('signup'):t('login')}</button>
       <p class="err" id="auth-err" style="display:${state.authError?'block':'none'}">${state.authError||''}</p>
       ${signup?'<p style="font-size:11px;color:var(--sub);margin-top:10px">Pode ser necessário confirmar o email antes do primeiro acesso.</p>':''}
-      <button class="btn-ghost" id="auth-toggle" style="margin-top:12px">${signup?'Já tenho conta — entrar':'Não tenho conta — criar'}</button>
+      <button class="btn-ghost" id="auth-toggle" style="margin-top:12px">${signup?t('or_login'):t('or_signup')}</button>
     </div>
   </div>`;
 }
@@ -356,9 +486,9 @@ function bindAuthEvents(){
 
 
 function renderFilhos(){
-  let h = `<h2 style="font-size:17px;margin-bottom:12px">Meus filhos</h2>`;
+  let h = `<h2 style="font-size:17px;margin-bottom:12px">${t('my_kids')}</h2>`;
   if(!state.children.length){
-    h += `<div class="card empty"><span class="em">👨‍👩‍👧</span>Cadastre seu primeiro filho para começar.</div>`;
+    h += `<div class="card empty"><img src="/mascot-vazio.jpg" alt="" style="width:120px;border-radius:12px;margin-bottom:10px">${t('no_child')}</div>`;
   }
   for(const c of state.children){
     h += `<div class="child-row ${c.id===state.activeChildId?'active':''}" data-select-child="${c.id}">
@@ -370,22 +500,22 @@ function renderFilhos(){
   const showForm = state.children.length===0 || state.showAddChild;
 
   if(!showForm){
-    h += `<button class="btn btn-block" id="toggle-add-child">+ Adicionar outro filho</button>`;
+    h += `<button class="btn btn-block" id="toggle-add-child">${t('add_another')}</button>`;
   } else {
     h += `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <p class="section-title" style="margin-bottom:0">Adicionar filho</p>
-        ${state.children.length>0?`<button class="btn-ghost" id="toggle-add-child">fechar ▲</button>`:''}
+        <p class="section-title" style="margin-bottom:0">${t('add_child')}</p>
+        ${state.children.length>0?`<button class="btn-ghost" id="toggle-add-child">${t('close')}</button>`:''}
       </div>
-      <label class="field-label">Nome</label>
+      <label class="field-label">${t('name')}</label>
       <input type="text" id="new-name" placeholder="Nome da criança" style="margin-bottom:10px">
-      <label class="field-label">Idade: <span id="age-out">8</span> anos</label>
+      <label class="field-label">${t('age')}: <span id="age-out">8</span> anos</label>
       <input type="range" min="4" max="13" value="8" id="new-age" style="margin-bottom:10px">
-      <label class="field-label">Colégio (opcional)</label>
+      <label class="field-label">${t('school')}</label>
       <input type="text" id="new-school" placeholder="Nome do colégio" style="margin-bottom:10px">
-      <label class="field-label">O que ele(a) adora?</label>
+      <label class="field-label">${t('prefs_q')}</label>
       <div id="pref-chips" style="margin-bottom:12px">${PREF_OPTIONS.map(p=>`<span class="chip" data-pref="${p.id}">${p.em} ${p.label}</span>`).join('')}</div>
-      <button class="btn btn-primary btn-block" id="add-child-btn">Adicionar filho</button>
+      <button class="btn btn-primary btn-block" id="add-child-btn">${t('add_child')}</button>
       <p class="err" id="add-child-err" style="display:none"></p>
     </div>`;
   }
@@ -404,25 +534,29 @@ function renderEstudar(){
 
   if(!state.currentActivity){
     h += `<div class="card">
-      <p class="section-title">🖼️ Nova atividade</p>
-      <label class="field-label">Assunto da prova (rótulo — não substitui o material)</label>
+      <p class="section-title"><img src="/mascot-livro.jpg" alt="" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:-8px;margin-right:4px">${t('new_activity')}</p>
+      <label class="field-label">${t('subject')}</label>
       <input type="text" id="subject-input" placeholder="Ex: ciclo da água, tabuada do 7..." style="margin-bottom:6px">
-      <p style="font-size:11px;color:var(--sub);margin:0 0 12px">💡 Se anexar foto/PDF, o conteúdo é gerado a partir do material — esse campo é só um rótulo para ajudar a localizar o tema.</p>
-      <label class="field-label">Fotos ou PDF da página do livro (opcional, até 20 arquivos)</label>
+      <p style="font-size:11px;color:var(--sub);margin:0 0 12px">${t('subject_hint')}</p>
+      <label class="field-label" style="display:flex;align-items:center;gap:6px"><img src="/mascot-lupa.jpg" alt="" style="width:24px;height:24px;border-radius:50%;object-fit:cover">${t('files_label')}</label>
       <div id="upload-preview" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px"></div>
       <div class="row" style="margin-bottom:12px">
-        <label class="btn btn-block" for="camera-input" style="text-align:center;display:block">📷 Tirar foto</label>
-        <label class="btn btn-block" for="file-input" style="text-align:center;display:block">📎 Anexar arquivos</label>
+        <label class="btn btn-block" for="camera-input" style="text-align:center;display:block">${t('take_photo')}</label>
+        <label class="btn btn-block" for="file-input" style="text-align:center;display:block">${t('attach')}</label>
       </div>
       <input type="file" accept="image/*" capture="environment" id="camera-input" style="display:none">
       <input type="file" accept="image/*,application/pdf" id="file-input" style="display:none" multiple>
       <div style="margin:14px 0">
-        <label class="field-label">Quantidade de questões do simulado: <span id="count-out">8</span></label>
+        <label class="field-label">${t('q_count')} <span id="count-out">8</span></label>
         <input type="range" min="1" max="30" value="8" id="count-input">
       </div>
-      <button class="btn btn-primary btn-block" id="generate-btn">Gerar estratégias de estudo</button>
+      <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 14px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="illustrate-questions" style="width:auto;margin-top:2px">
+        <span>${t('illustrate_q')} <span style="color:var(--sub);font-size:11px">${t('illustrate_q_hint')}</span></span>
+      </label>
+      <button class="btn btn-primary btn-block" id="generate-btn">${t('generate')}</button>
       <p class="err" id="gen-err" style="display:${state.error?'block':'none'}">${state.error||''}</p>
-      <p style="font-size:11px;color:var(--sub);margin-top:10px">⚠️ O conteúdo é gerado por IA e pode conter erros. Revise antes de usar com a criança.</p>
+      <p style="font-size:11px;color:var(--sub);margin-top:10px">${t('ai_warn')}</p>
     </div>`;
     if(state.loading) h += `<div class="loading"><span class="spin-book">📖</span><br>${state.loadingMsg||'Gerando conteúdo com IA...'}<br><span style="font-size:12px">⏱️ ${state.loadingSeconds||0}s — ainda trabalhando, não fechar a tela</span>${(posterAbortController && (state.loadingSeconds||0)>6) ? `<br><button class="btn no-print" id="skip-poster-btn" style="margin-top:12px">Pular ilustração e continuar sem pôster</button>` : ''}</div>`;
   } else {
@@ -437,31 +571,32 @@ function renderActivityResult(a, isCurrent){
       <h3 style="font-size:16px">${escapeHtml(a.subject)}</h3>
       ${isCurrent?`<button class="btn-ghost no-print" id="new-activity-btn">+ nova</button>`:''}
     </div>
-    <p class="no-print" style="font-size:11px;color:var(--sub);background:var(--bg);border-radius:8px;padding:8px 10px;margin-bottom:12px">⚠️ Conteúdo gerado por IA — pode conter erros. Revise antes de usar com a criança.</p>
+    <p class="no-print" style="font-size:11px;color:var(--sub);background:var(--bg);border-radius:8px;padding:8px 10px;margin-bottom:12px">${t('ai_warn')}</p>
 
     <div class="card" style="background:var(--bg);border:none;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-        <p class="section-title">📄 Resumo fácil</p>
-        <button class="btn-ghost no-print" data-report="resumo">Reportar</button>
+        <p class="section-title">${t('resumo')}</p>
+        <button class="btn-ghost no-print" data-report="resumo">${t('report')}</button>
       </div>
       <p style="font-size:13px;line-height:1.6;white-space:pre-line">${escapeHtml(a.resumo)}</p>
     </div>
 
     <div class="card" style="background:var(--bg);border:none">
-      <p class="section-title">✅ Simulado (${a.questoes.length} questões)</p>
+      <p class="section-title">${t('simulado')} (${a.questoes.length})</p>
       ${a.questoes.map((q,i)=>`<div class="q-row">
         <div class="q-top">
           <p><strong>${i+1}.</strong> ${escapeHtml(q.pergunta)}</p>
           <button class="btn-danger no-print" data-del-q="${i}" aria-label="Deletar questão">✕</button>
         </div>
+        ${q.imagem ? `<img src="${q.imagem}" alt="Ilustração da questão ${i+1}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;margin:6px 0">` : ''}
         <div class="q-opts">${q.opcoes.map((o,oi)=>`${String.fromCharCode(97+oi)}) ${escapeHtml(o)}`).join(' &nbsp; ')}</div>
       </div>`).join('')}
     </div>
 
     <div class="card map-print-page" style="background:var(--bg);border:none;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-        <p class="section-title">🧠 Mapa mental ilustrado</p>
-        <button class="btn-ghost no-print" data-report="mapa">Reportar</button>
+        <p class="section-title">${t('mapa')}</p>
+        <button class="btn-ghost no-print" data-report="mapa">${t('report')}</button>
       </div>
       ${a.mapaError ? `<p class="err no-print" style="margin-bottom:8px">⚠️ Pôster ilustrado falhou — mostrando lista. Detalhe: ${escapeHtml(a.mapaError)}</p>` : ''}
       ${a.mapaImage
@@ -470,8 +605,8 @@ function renderActivityResult(a, isCurrent){
     </div>
 
     <div class="row no-print" style="margin-top:14px">
-      <button class="btn btn-block" id="print-btn">🖨️ Imprimir / PDF</button>
-      <button class="btn btn-primary btn-block" id="save-activity-btn">${isCurrent?'💾 Salvar no histórico':''}</button>
+      <button class="btn btn-block" id="print-btn">${t('print')}</button>
+      <button class="btn btn-primary btn-block" id="save-activity-btn">${isCurrent?t('save_history'):''}</button>
     </div>
   </div>`;
   return h;
@@ -481,15 +616,22 @@ function renderHistorico(){
   const child = activeChild();
   if(!child) return `<div class="card empty"><span class="em">🙈</span>Cadastre um filho primeiro.</div>`;
   const acts = state.activities[child.id]||[];
-  let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px">
-    <h2 style="font-size:17px">Histórico</h2>
+  let h = '';
+  if(state.celebrate){
+    h += `<div class="card no-print" style="text-align:center;padding:14px">
+      <img src="/mascot-comemorando.jpg" alt="" style="width:90px;border-radius:12px;margin-bottom:6px">
+      <p style="font-size:13px;font-weight:500;margin:0">Atividade salva! 🎉</p>
+    </div>`;
+  }
+  h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px">
+    <h2 style="font-size:17px">${t('history')}</h2>
     ${state.children.length>1?`<select id="switch-child-hist" style="width:auto">${state.children.map(c=>`<option value="${c.id}" ${c.id===child.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>`:`<span style="font-size:13px;color:var(--sub)">${escapeHtml(child.name)}</span>`}
   </div>`;
-  if(!acts.length){ h += `<div class="card empty"><span class="em">🗂️</span>Nenhuma atividade salva ainda.</div>`; return h; }
+  if(!acts.length){ h += `<div class="card empty"><img src="/mascot-vazio.jpg" alt="" style="width:120px;border-radius:12px;margin-bottom:10px">${t('no_history')}</div>`; return h; }
   if(state.openHistoryId){
     const a = acts.find(x=>x.id===state.openHistoryId);
     if(a){
-      h += `<button class="btn-ghost no-print" id="back-hist" style="margin-bottom:10px">← Voltar ao histórico</button>`;
+      h += `<button class="btn-ghost no-print" id="back-hist" style="margin-bottom:10px">${t('back')}</button>`;
       h += renderActivityResult(a, false);
       return h;
     }
@@ -688,6 +830,12 @@ function compressImage(file){
         state.currentActivity.mapaError = (e.name==='AbortError') ? 'Você optou por pular a espera.' : (e.message || 'erro desconhecido');
       }
       posterAbortController = null;
+
+      if(document.getElementById('illustrate-questions')?.checked){
+        const child2 = activeChild();
+        const prefsText2 = child2.prefs.map(prefLabel).join(', ');
+        await illustrateQuestions(state.currentActivity, prefsText2, child2.age);
+      }
     }catch(e){
       console.error(e);
       state.error = 'Não consegui gerar o conteúdo agora. Detalhe: ' + (e.message || 'erro desconhecido');
@@ -725,7 +873,9 @@ function compressImage(file){
       state.activities[child.id].push(saved);
       state.currentActivity = null;
       state.view = 'historico';
+      state.celebrate = true;
       render();
+      setTimeout(()=>{ state.celebrate=false; render(); }, 3200);
     }catch(e){
       window.__toast = 'Não consegui salvar no histórico: ' + (e.message||'erro desconhecido');
       setTimeout(()=>{window.__toast=null;render();},4500);
