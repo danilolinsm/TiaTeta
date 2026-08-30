@@ -60,9 +60,11 @@
   .child-meta{flex:1}
   .child-meta strong{font-size:14px;display:block}
   .child-meta small{color:var(--sub);font-size:12px}
-  nav.tabs{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;max-width:480px;margin:0 auto;box-shadow:0 -2px 10px rgba(26,63,53,0.06)}
+  nav.tabs{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;max-width:480px;margin:0 auto;box-shadow:0 -2px 10px rgba(26,63,53,0.06);z-index:50}
   nav.tabs button{flex:1;background:none;border:none;padding:12px 0 10px;font-size:11px;color:var(--sub);display:flex;flex-direction:column;align-items:center;gap:4px}
   nav.tabs button.active{color:var(--teal);font-weight:600}
+  .progress-bar{width:100%;height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:10px 0 0}
+  .progress-bar > div{height:100%;background:var(--teal);border-radius:4px;transition:width .4s ease}
   .icon{width:20px;height:20px;display:inline-block}
   .upload-box{border:2px dashed var(--line);border-radius:12px;padding:26px 12px;text-align:center;color:var(--sub);font-size:13px}
   .upload-box img{max-width:100%;border-radius:8px;margin-bottom:8px}
@@ -323,6 +325,8 @@ async function illustrateQuestions(activity, prefsText, age){
     }catch(e){
       console.warn('ilustração da questão '+(i+1)+' falhou', e);
     }
+    state.loadingDone = 3 + i + 1;
+    render();
   }
 }
 
@@ -417,6 +421,7 @@ function mascotHeader(withLogout){
         <button data-lang="pt" class="${(state.lang||'pt')==='pt'?'on':''}">PT</button>
         <button data-lang="en" class="${state.lang==='en'?'on':''}">EN</button>
       </div>
+      ${withLogout ? `<button class="btn-ghost no-print" id="account-btn" style="color:rgba(255,255,255,0.85);font-size:16px;padding:2px 4px" aria-label="Minha conta">👤</button>` : ''}
       ${withLogout ? `<button class="btn-ghost no-print" id="logout-btn" style="color:rgba(255,255,255,0.85)">${t('logout')}</button>` : ''}
     </div>
   </header>`;
@@ -455,6 +460,8 @@ function render(){
   bindLangToggle();
   const logoutBtn = document.getElementById('logout-btn');
   if(logoutBtn) logoutBtn.onclick = async ()=>{ await db.auth.signOut(); };
+  const accountBtn = document.getElementById('account-btn');
+  if(accountBtn) accountBtn.onclick = openAccountModal;
 }
 
 function bindLangToggle(){
@@ -612,6 +619,17 @@ function renderFilhos(){
   return h;
 }
 
+function renderLoadingCard(){
+  const pct = state.loadingTotal ? Math.min(100, Math.round(((state.loadingDone||0)/state.loadingTotal)*100)) : 8;
+  return `<div class="card" style="text-align:center;padding:32px 20px">
+    <span class="spin-book" style="font-size:42px">📖</span>
+    <p style="font-weight:500;margin:14px 0 4px;font-size:14px">${state.loadingMsg||'Gerando conteúdo com IA...'}</p>
+    <div class="progress-bar"><div style="width:${pct}%"></div></div>
+    <p style="font-size:11px;color:var(--sub);margin-top:8px">⏱️ ${state.loadingSeconds||0}s · ${pct}% · não feche a tela</p>
+    ${(posterAbortController && (state.loadingSeconds||0)>6) ? `<button class="btn no-print" id="skip-poster-btn" style="margin-top:14px">Pular ilustração e continuar sem pôster</button>` : ''}
+  </div>`;
+}
+
 function renderEstudar(){
   const child = activeChild();
   if(!child) return `<div class="card empty"><span class="em">🙈</span>Cadastre um filho primeiro na aba "Filhos".</div>`;
@@ -622,7 +640,9 @@ function renderEstudar(){
 
   h += `<p class="no-print" style="font-size:11px;color:var(--sub);margin:-4px 0 4px">🎨 Pôster ilustrado gerado automaticamente pela IA.</p>`;
 
-  if(!state.currentActivity){
+  if(state.loading){
+    h += renderLoadingCard();
+  } else if(!state.currentActivity){
     h += `<div class="card">
       <p class="section-title"><img src="/mascot-livro.jpg" alt="" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:-8px;margin-right:4px">${t('new_activity')}</p>
       <label class="field-label">${t('subject')}</label>
@@ -648,7 +668,6 @@ function renderEstudar(){
       <p class="err" id="gen-err" style="display:${state.error?'block':'none'}">${state.error||''}</p>
       <p style="font-size:11px;color:var(--sub);margin-top:10px">${t('ai_warn')}</p>
     </div>`;
-    if(state.loading) h += `<div class="loading"><span class="spin-book">📖</span><br>${state.loadingMsg||'Gerando conteúdo com IA...'}<br><span style="font-size:12px">⏱️ ${state.loadingSeconds||0}s — ainda trabalhando, não fechar a tela</span>${(posterAbortController && (state.loadingSeconds||0)>6) ? `<br><button class="btn no-print" id="skip-poster-btn" style="margin-top:12px">Pular ilustração e continuar sem pôster</button>` : ''}</div>`;
   } else {
     h += renderActivityResult(state.currentActivity, true);
   }
@@ -937,34 +956,44 @@ function compressImage(file){
     const errEl = document.getElementById('gen-err');
     if(!subject){ errEl.textContent='Digite o assunto da prova.'; errEl.style.display='block'; return; }
     const count = parseInt(document.getElementById('count-input').value,10);
-    state.loading = true; state.error = null; state.loadingMsg = 'Gerando conteúdo com IA...'; startLoadingTimer(); render();
+    const illustrate = !!document.getElementById('illustrate-questions')?.checked;
+    state.loading = true; state.error = null;
+    state.loadingTotal = 3 + (illustrate ? count : 0);
+    state.loadingDone = 0;
+    state.loadingMsg = 'Gerando conteúdo com IA...'; startLoadingTimer(); render();
     try{
       const result = await generateActivity(subject, pendingFiles, count);
+      state.loadingDone = 1;
 
       state.loadingMsg = 'Revisando o texto...'; render();
       const mapaLabels = result.mapa.map(n=>n.label);
       const revised = await proofreadTexts([result.resumo, ...mapaLabels]);
       const resumoRevisado = revised[0] || result.resumo;
       const mapaRevisado = result.mapa.map((n,i)=>({...n, label: revised[i+1]||n.label}));
+      state.loadingDone = 2;
 
-      state.currentActivity = { id:'a'+Date.now(), subject, createdAt: Date.now(), resumo: resumoRevisado, resumoVersions:[resumoRevisado], mapa: mapaRevisado, mapaVersions:[mapaRevisado], mapaImage:null, questoes: result.questoes };
+      const activity = { id:'a'+Date.now(), subject, createdAt: Date.now(), resumo: resumoRevisado, resumoVersions:[resumoRevisado], mapa: mapaRevisado, mapaVersions:[mapaRevisado], mapaImage:null, questoes: result.questoes };
+
       state.loadingMsg = 'Desenhando o pôster ilustrado (pode levar até 40s)...'; render();
       try{
         const child = activeChild();
         const prefsText = child.prefs.map(prefLabel).join(', ');
         posterAbortController = new AbortController();
-        state.currentActivity.mapaImage = await callNanoBanana(buildPosterPrompt(subject, resumoRevisado, mapaRevisado, prefsText, child.age), posterAbortController.signal);
+        activity.mapaImage = await callNanoBanana(buildPosterPrompt(subject, resumoRevisado, mapaRevisado, prefsText, child.age), posterAbortController.signal);
       }catch(e){
         console.warn('poster falhou', e);
-        state.currentActivity.mapaError = (e.name==='AbortError') ? 'Você optou por pular a espera.' : (e.message || 'erro desconhecido');
+        activity.mapaError = (e.name==='AbortError') ? 'Você optou por pular a espera.' : (e.message || 'erro desconhecido');
       }
       posterAbortController = null;
+      state.loadingDone = 3;
 
-      if(document.getElementById('illustrate-questions')?.checked){
+      if(illustrate){
         const child2 = activeChild();
         const prefsText2 = child2.prefs.map(prefLabel).join(', ');
-        await illustrateQuestions(state.currentActivity, prefsText2, child2.age);
+        await illustrateQuestions(activity, prefsText2, child2.age);
       }
+
+      state.currentActivity = activity;
     }catch(e){
       console.error(e);
       state.error = 'Não consegui gerar o conteúdo agora. Detalhe: ' + (e.message || 'erro desconhecido');
@@ -1020,6 +1049,62 @@ function compressImage(file){
 function findOpenHistoryActivity(){
   const child = activeChild();
   return (state.activities[child.id]||[]).find(a=>a.id===state.openHistoryId);
+}
+
+function openAccountModal(){
+  const isEn = state.lang==='en';
+  const fullName = (state.user && state.user.user_metadata && state.user.user_metadata.full_name) || '';
+  window.__modal = `<div class="modal-bg" id="modal-bg"><div class="modal">
+    <h3 style="font-size:16px;margin-bottom:12px">${isEn?'My account':'Minha conta'}</h3>
+
+    <label class="field-label">${t('email')}</label>
+    <input type="email" value="${escapeHtml(state.user?.email||'')}" disabled style="margin-bottom:14px;opacity:0.7">
+
+    <label class="field-label">${isEn?'Name':'Nome'}</label>
+    <input type="text" id="acc-name" value="${escapeHtml(fullName)}" placeholder="${isEn?'Your name':'Seu nome'}" style="margin-bottom:8px">
+    <button class="btn btn-block" id="acc-save-name" style="margin-bottom:16px">${isEn?'Save name':'Salvar nome'}</button>
+
+    <label class="field-label">${isEn?'New password':'Nova senha'}</label>
+    <input type="password" id="acc-pw1" placeholder="${isEn?'Min. 6 characters':'Mínimo 6 caracteres'}" style="margin-bottom:8px">
+    <label class="field-label">${isEn?'Confirm new password':'Confirmar nova senha'}</label>
+    <input type="password" id="acc-pw2" style="margin-bottom:8px">
+    <button class="btn btn-block" id="acc-save-pw">${isEn?'Save new password':'Salvar nova senha'}</button>
+
+    <p class="err" id="acc-err" style="display:none"></p>
+    <p id="acc-ok" style="display:none;color:var(--teal);font-size:13px;margin-top:8px">${isEn?'Saved!':'Salvo!'}</p>
+
+    <button class="btn btn-block" id="modal-cancel" style="margin-top:16px">${isEn?'Close':'Fechar'}</button>
+  </div></div>`;
+  render();
+
+  document.getElementById('modal-cancel').onclick = ()=>{ window.__modal=null; render(); };
+
+  document.getElementById('acc-save-name').onclick = async ()=>{
+    const name = document.getElementById('acc-name').value.trim();
+    const errEl = document.getElementById('acc-err'); const okEl = document.getElementById('acc-ok');
+    errEl.style.display='none'; okEl.style.display='none';
+    try{
+      const { data, error } = await db.auth.updateUser({ data:{ full_name:name } });
+      if(error) throw error;
+      state.user = data.user;
+      okEl.style.display='block';
+    }catch(e){ errEl.textContent = e.message; errEl.style.display='block'; }
+  };
+
+  document.getElementById('acc-save-pw').onclick = async ()=>{
+    const pw1 = document.getElementById('acc-pw1').value;
+    const pw2 = document.getElementById('acc-pw2').value;
+    const errEl = document.getElementById('acc-err'); const okEl = document.getElementById('acc-ok');
+    errEl.style.display='none'; okEl.style.display='none';
+    if(pw1.length<6){ errEl.textContent = isEn?'Password must be at least 6 characters.':'A senha precisa ter pelo menos 6 caracteres.'; errEl.style.display='block'; return; }
+    if(pw1!==pw2){ errEl.textContent = isEn?"Passwords don't match.":'As senhas não coincidem.'; errEl.style.display='block'; return; }
+    try{
+      const { error } = await db.auth.updateUser({ password: pw1 });
+      if(error) throw error;
+      document.getElementById('acc-pw1').value=''; document.getElementById('acc-pw2').value='';
+      okEl.style.display='block';
+    }catch(e){ errEl.textContent = e.message; errEl.style.display='block'; }
+  };
 }
 
 function openReportModal(part){
