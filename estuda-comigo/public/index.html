@@ -65,6 +65,10 @@
   nav.tabs button.active{color:var(--teal);font-weight:600}
   .progress-bar{width:100%;height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:10px 0 0}
   .progress-bar > div{height:100%;background:var(--teal);border-radius:4px;transition:width .4s ease}
+  .toggle-switch{width:40px;height:22px;border-radius:11px;background:var(--line);border:none;position:relative;padding:0}
+  .toggle-switch span{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.2);transition:left .2s}
+  .toggle-switch.on{background:var(--teal)}
+  .toggle-switch.on span{left:20px}
   .icon{width:20px;height:20px;display:inline-block}
   .upload-box{border:2px dashed var(--line);border-radius:12px;padding:26px 12px;text-align:center;color:var(--sub);font-size:13px}
   .upload-box img{max-width:100%;border-radius:8px;margin-bottom:8px}
@@ -239,6 +243,18 @@ async function loadUserData(){
   if(state.children.length) state.activeChildId = state.children[0].id;
   for(const c of state.children){
     state.activities[c.id] = await loadActivitiesFromDb(c.id);
+  }
+  state.canGenerateImages = await loadMyPermission();
+}
+
+async function loadMyPermission(){
+  try{
+    const { data, error } = await db.from('permissions').select('can_generate_images').eq('user_id', state.user.id).maybeSingle();
+    if(error) throw error;
+    return !!(data && data.can_generate_images);
+  }catch(e){
+    console.warn('não consegui checar permissão de imagem', e);
+    return false;
   }
 }
 
@@ -624,6 +640,13 @@ function renderFilhos(){
   return h;
 }
 
+function renderAccessRequestNote(){
+  if(state.accessRequested){
+    return `<p style="font-size:12px;color:var(--teal-dark);background:var(--teal-soft);border-radius:8px;padding:8px 10px;margin:6px 0 0">✅ Pedido enviado! Assim que for liberado, essa opção passa a funcionar automaticamente.</p>`;
+  }
+  return `<p style="font-size:12px;color:var(--sub);margin:6px 0 0">🔒 A geração de imagens (pôster e ilustração das questões) está desativada para sua conta. <button class="btn-ghost no-print" id="request-access-btn" style="font-size:12px;text-decoration:underline;padding:0">Solicitar acesso por email</button></p>`;
+}
+
 function renderLoadingCard(){
   const pct = state.loadingTotal ? Math.min(100, Math.round(((state.loadingDone||0)/state.loadingTotal)*100)) : 8;
   return `<div class="card" style="text-align:center;padding:32px 20px">
@@ -643,7 +666,7 @@ function renderEstudar(){
     ${state.children.length>1?`<select id="switch-child" style="width:auto">${state.children.map(c=>`<option value="${c.id}" ${c.id===child.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>`:''}
   </div>`;
 
-  h += `<p class="no-print" style="font-size:11px;color:var(--sub);margin:-4px 0 4px">🎨 Pôster ilustrado gerado automaticamente pela IA.</p>`;
+  h += `<p class="no-print" style="font-size:11px;color:var(--sub);margin:-4px 0 4px">🎨 ${state.canGenerateImages ? 'Pôster ilustrado gerado automaticamente pela IA.' : renderAccessRequestNote()}</p>`;
 
   if(state.loading){
     h += renderLoadingCard();
@@ -665,11 +688,12 @@ function renderEstudar(){
         <label class="field-label">${t('q_count')} <span id="count-out">8</span></label>
         <input type="range" min="1" max="30" value="8" id="count-input">
       </div>
-      <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 14px;font-size:13px;cursor:pointer">
-        <input type="checkbox" id="illustrate-questions" style="width:auto;margin-top:2px">
+      <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 4px;font-size:13px;${state.canGenerateImages?'cursor:pointer':'cursor:not-allowed;opacity:0.45'}">
+        <input type="checkbox" id="illustrate-questions" ${state.canGenerateImages?'':'disabled'} style="width:auto;margin-top:2px">
         <span>${t('illustrate_q')} <span style="color:var(--sub);font-size:11px">${t('illustrate_q_hint')}</span></span>
       </label>
-      <button class="btn btn-primary btn-block" id="generate-btn">${t('generate')}</button>
+      ${!state.canGenerateImages ? renderAccessRequestNote() : ''}
+      <button class="btn btn-primary btn-block" id="generate-btn" style="margin-top:10px">${t('generate')}</button>
       <p class="err" id="gen-err" style="display:${state.error?'block':'none'}">${state.error||''}</p>
       <p style="font-size:11px;color:var(--sub);margin-top:10px">${t('ai_warn')}</p>
     </div>`;
@@ -955,6 +979,24 @@ function compressImage(file){
   const skipPosterBtn = document.getElementById('skip-poster-btn');
   if(skipPosterBtn) skipPosterBtn.onclick = ()=>{ if(posterAbortController) posterAbortController.abort(); };
 
+  const requestAccessBtn = document.getElementById('request-access-btn');
+  if(requestAccessBtn) requestAccessBtn.onclick = async ()=>{
+    requestAccessBtn.disabled = true; requestAccessBtn.textContent = 'Enviando...';
+    try{
+      await db.from('access_requests').insert({ user_id: state.user.id, email: state.user.email });
+      await fetch('/api/request-access', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ email: state.user.email, name: (state.user.user_metadata&&state.user.user_metadata.full_name)||'' })
+      }).catch(()=>{});
+      state.accessRequested = true;
+    }catch(e){
+      console.warn('falha ao enviar pedido de acesso', e);
+      window.__toast = 'Não consegui enviar o pedido agora. Tente de novo.';
+      setTimeout(()=>{window.__toast=null;render();},4000);
+    }
+    render();
+  };
+
   const genBtn = document.getElementById('generate-btn');
   if(genBtn) genBtn.onclick = async ()=>{
     const subject = document.getElementById('subject-input').value.trim();
@@ -979,20 +1021,22 @@ function compressImage(file){
 
       const activity = { id:'a'+Date.now(), subject, createdAt: Date.now(), resumo: resumoRevisado, resumoVersions:[resumoRevisado], mapa: mapaRevisado, mapaVersions:[mapaRevisado], mapaImage:null, questoes: result.questoes };
 
-      state.loadingMsg = 'Desenhando o pôster ilustrado (pode levar até 40s)...'; render();
-      try{
-        const child = activeChild();
-        const prefsText = child.prefs.map(prefLabel).join(', ');
-        posterAbortController = new AbortController();
-        activity.mapaImage = await callNanoBanana(buildPosterPrompt(subject, resumoRevisado, mapaRevisado, prefsText, child.age), posterAbortController.signal);
-      }catch(e){
-        console.warn('poster falhou', e);
-        activity.mapaError = (e.name==='AbortError') ? 'Você optou por pular a espera.' : (e.message || 'erro desconhecido');
+      if(state.canGenerateImages){
+        state.loadingMsg = 'Desenhando o pôster ilustrado (pode levar até 40s)...'; render();
+        try{
+          const child = activeChild();
+          const prefsText = child.prefs.map(prefLabel).join(', ');
+          posterAbortController = new AbortController();
+          activity.mapaImage = await callNanoBanana(buildPosterPrompt(subject, resumoRevisado, mapaRevisado, prefsText, child.age), posterAbortController.signal);
+        }catch(e){
+          console.warn('poster falhou', e);
+          activity.mapaError = (e.name==='AbortError') ? 'Você optou por pular a espera.' : (e.message || 'erro desconhecido');
+        }
+        posterAbortController = null;
       }
-      posterAbortController = null;
       state.loadingDone = 3;
 
-      if(illustrate){
+      if(illustrate && state.canGenerateImages){
         const child2 = activeChild();
         const prefsText2 = child2.prefs.map(prefLabel).join(', ');
         await illustrateQuestions(activity, prefsText2, child2.age);
@@ -1132,19 +1176,43 @@ function openAccountModal(){
 
 async function openAdminArea(){
   state.showAdmin = true;
-  state.adminLoading = true; state.adminError = null; state.adminUsers = null;
+  state.adminLoading = true; state.adminError = null; state.adminUsers = null; state.adminPermissions = null; state.adminRequests = null;
   render();
   try{
-    const res = await fetch('/api/admin-users', {
-      headers: { Authorization: `Bearer ${state.session.access_token}` }
-    });
-    const data = await res.json();
-    if(data.error) throw new Error(data.error);
-    state.adminUsers = data.users;
+    const [usersRes, permRes] = await Promise.all([
+      fetch('/api/admin-users', { headers: { Authorization: `Bearer ${state.session.access_token}` } }),
+      fetch('/api/admin-permissions', { headers: { Authorization: `Bearer ${state.session.access_token}` } })
+    ]);
+    const usersData = await usersRes.json();
+    if(usersData.error) throw new Error(usersData.error);
+    const permData = await permRes.json();
+    if(permData.error) throw new Error(permData.error);
+    state.adminUsers = usersData.users;
+    state.adminPermissions = permData.permissions || [];
+    state.adminRequests = permData.requests || [];
   }catch(e){
     state.adminError = e.message || 'Erro ao carregar usuários';
   }
   state.adminLoading = false;
+  render();
+}
+
+async function toggleUserImagePermission(userId, value){
+  try{
+    const res = await fetch('/api/admin-permissions', {
+      method:'POST',
+      headers: { 'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}` },
+      body: JSON.stringify({ action:'toggle', user_id:userId, value })
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    const idx = state.adminPermissions.findIndex(p=>p.user_id===userId);
+    if(idx>-1) state.adminPermissions[idx].can_generate_images = value;
+    else state.adminPermissions.push({ user_id:userId, can_generate_images:value });
+  }catch(e){
+    window.__toast = 'Não consegui salvar a permissão: ' + (e.message||'erro');
+    setTimeout(()=>{window.__toast=null;render();},4000);
+  }
   render();
 }
 
@@ -1160,16 +1228,35 @@ function renderAdminArea(){
     return h;
   }
   const users = state.adminUsers || [];
+  const perms = state.adminPermissions || [];
+  const requests = state.adminRequests || [];
+
+  if(requests.length){
+    h += `<div class="card" style="background:var(--teal-soft);border:1.5px solid var(--teal)">
+      <p style="font-weight:600;font-size:14px;margin:0 0 8px">📬 ${requests.length} pedido(s) de acesso pendente(s)</p>
+      ${requests.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid rgba(0,0,0,0.06)">
+        <span style="font-size:13px">${escapeHtml(r.email)}</span>
+        <button class="btn btn-primary" data-approve-request="${r.id}" data-approve-user="${r.user_id}" style="font-size:12px;padding:6px 10px">Aprovar</button>
+      </div>`).join('')}
+    </div>`;
+  }
+
   h += `<p style="font-size:12px;color:var(--sub);margin-bottom:12px">${users.length} usuário(s) cadastrado(s)</p>`;
   for(const u of users){
     const created = u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '—';
     const lastLogin = u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString('pt-BR') : 'nunca entrou';
     const confirmed = u.email_confirmed_at ? '✅ email confirmado' : '⚠️ email não confirmado';
+    const perm = perms.find(p=>p.user_id===u.id);
+    const canImg = !!(perm && perm.can_generate_images);
     h += `<div class="card" style="padding:14px">
       <p style="font-size:13px;font-weight:500;margin:0">${escapeHtml(u.full_name || u.email)}</p>
       <p style="font-size:12px;color:var(--sub);margin:2px 0 0">${escapeHtml(u.email)}</p>
       <p style="font-size:11px;color:var(--sub);margin:6px 0 0">Cadastrado em ${created} · Último acesso: ${lastLogin}</p>
       <p style="font-size:11px;color:var(--sub);margin:2px 0 10px">${confirmed}${u.role?` · perfil: ${u.role==='student'?'estudante':'pai/mãe'}`:''}</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--bg);border-radius:8px;margin-bottom:10px">
+        <span style="font-size:12px">🎨 Pode gerar imagens</span>
+        <button data-toggle-img="${u.id}" data-current="${canImg?'1':'0'}" class="toggle-switch ${canImg?'on':''}" role="switch" aria-checked="${canImg}"><span></span></button>
+      </div>
       <button class="btn" data-reset-email="${escapeHtml(u.email)}" style="font-size:12px">Enviar redefinição de senha</button>
     </div>`;
   }
@@ -1188,6 +1275,31 @@ function bindAdminEvents(){
       b.textContent = 'Email enviado ✓';
     }catch(e){
       b.textContent = 'Erro ao enviar';
+      console.warn(e);
+    }
+  });
+
+  document.querySelectorAll('[data-toggle-img]').forEach(b=>b.onclick = ()=>{
+    const userId = b.dataset.toggleImg;
+    const newVal = b.dataset.current !== '1';
+    toggleUserImagePermission(userId, newVal);
+  });
+
+  document.querySelectorAll('[data-approve-request]').forEach(b=>b.onclick = async ()=>{
+    const requestId = b.dataset.approveRequest;
+    const userId = b.dataset.approveUser;
+    b.disabled = true; b.textContent = '...';
+    try{
+      await fetch('/api/admin-permissions', {
+        method:'POST',
+        headers: { 'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}` },
+        body: JSON.stringify({ action:'resolve_request', request_id:requestId })
+      });
+      await toggleUserImagePermission(userId, true);
+      state.adminRequests = (state.adminRequests||[]).filter(r=>r.id!==requestId);
+      render();
+    }catch(e){
+      b.textContent = 'Erro';
       console.warn(e);
     }
   });
