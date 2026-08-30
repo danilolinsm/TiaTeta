@@ -122,6 +122,11 @@ async function insertChildInDb(child){
   if(error){ console.warn('insertChild', error); throw error; }
   return { id:data.id, name:data.name, age:data.age, school:data.school, prefs:data.prefs||[] };
 }
+async function updateChildInDb(id, child){
+  const { data, error } = await db.from('children').update({ name:child.name, age:child.age, school:child.school, prefs:child.prefs }).eq('id', id).select().single();
+  if(error){ console.warn('updateChild', error); throw error; }
+  return { id:data.id, name:data.name, age:data.age, school:data.school, prefs:data.prefs||[] };
+}
 function rowToActivity(d){
   return { id:d.id, subject:d.subject, createdAt:new Date(d.created_at).getTime(), resumo:d.resumo, resumoVersions:d.resumo_versions||[d.resumo], mapa:d.mapa||[], mapaVersions:d.mapa_versions||[d.mapa], mapaImage:d.mapa_image||null, mapaError:null, questoes:d.questoes||[] };
 }
@@ -156,6 +161,7 @@ let state = { session:null, user:null, authMode:'login', authError:null, lang:(l
 // ---------- idioma da interface ----------
 const I18N = {
   pt:{
+    subtitle:'Sua parceira pra ajudar nos estudos',
     tab_filhos:'Filhos', tab_estudar:'Estudar', tab_historico:'Histórico',
     logout:'Sair', login:'Entrar', signup:'Criar conta', or_login:'Já tenho conta — entrar', or_signup:'Não tenho conta — criar',
     email:'Email', password:'Senha', auth_subtitle:'Seus filhos e o histórico ficam salvos com segurança e acessíveis de qualquer aparelho.',
@@ -175,6 +181,7 @@ const I18N = {
     back:'← Voltar ao histórico',
   },
   en:{
+    subtitle:'Your partner for schoolwork',
     tab_filhos:'My Kids', tab_estudar:'Study', tab_historico:'History',
     logout:'Log out', login:'Log in', signup:'Sign up', or_login:'Already have an account — log in', or_signup:"Don't have an account — sign up",
     email:'Email', password:'Password', auth_subtitle:'Your kids and study history are saved securely and available on any device.',
@@ -195,6 +202,21 @@ const I18N = {
   }
 };
 function t(key){ return (I18N[state.lang||'pt'] && I18N[state.lang||'pt'][key]) || I18N.pt[key] || key; }
+function tk(key){
+  if(state.role==='student'){
+    const en = state.lang==='en';
+    const overrides = {
+      tab_filhos: en?'My Profile':'Meu perfil',
+      my_kids: en?'My profile':'Meu perfil',
+      add_child: en?'Create my profile':'Criar meu perfil',
+      add_another: en?'Edit my profile':'Editar meu perfil',
+      prefs_q: en?'What do you love?':'O que você adora?',
+      no_child: en?'Create your profile to get started.':'Crie seu perfil para começar.',
+    };
+    if(overrides[key]) return overrides[key];
+  }
+  return t(key);
+}
 
 const PREF_OPTIONS = [
   {id:'dino', label:'Dinossauros', em:'🦕'},
@@ -388,7 +410,7 @@ function mascotHeader(withLogout){
   return `<header class="top" style="justify-content:space-between">
     <div style="display:flex;align-items:center;gap:12px">
       <div class="mascot"><img src="/mascot.jpg" alt="" onerror="this.style.display='none'; this.parentElement.textContent='TT';"></div>
-      <div><h1>Tia Teta</h1><p class="subtitle">Sua parceira pra ajudar nos estudos</p></div>
+      <div><h1>Tia Teta</h1><p class="subtitle">${t('subtitle')}</p></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <div class="lang-toggle no-print" role="group" aria-label="Idioma">
@@ -407,6 +429,14 @@ function render(){
     bindLangToggle();
     return;
   }
+  if(!state.role){
+    app.innerHTML = mascotHeader(true) + renderRoleScreen();
+    bindRoleEvents();
+    bindLangToggle();
+    const logoutBtn0 = document.getElementById('logout-btn');
+    if(logoutBtn0) logoutBtn0.onclick = async ()=>{ await db.auth.signOut(); };
+    return;
+  }
   let html = mascotHeader(true);
   html += `<div class="view">`;
   if(state.view==='filhos') html += renderFilhos();
@@ -414,7 +444,7 @@ function render(){
   if(state.view==='historico') html += renderHistorico();
   html += `</div>`;
   html += `<nav class="tabs no-print">
-    <button data-tab="filhos" class="${state.view==='filhos'?'active':''}">${iconSvg('filhos')}${t('tab_filhos')}</button>
+    <button data-tab="filhos" class="${state.view==='filhos'?'active':''}">${iconSvg('filhos')}${tk('tab_filhos')}</button>
     <button data-tab="estudar" class="${state.view==='estudar'?'active':''}">${iconSvg('estudar')}${t('tab_estudar')}</button>
     <button data-tab="historico" class="${state.view==='historico'?'active':''}">${iconSvg('historico')}${t('tab_historico')}</button>
   </nav>`;
@@ -431,6 +461,42 @@ function bindLangToggle(){
   document.querySelectorAll('[data-lang]').forEach(b=>b.onclick = ()=>{
     state.lang = b.dataset.lang;
     localStorage.setItem('tt_lang', state.lang);
+    render();
+  });
+}
+
+function renderRoleScreen(){
+  const isEn = state.lang==='en';
+  return `<div class="view">
+    <div style="text-align:center;margin:6px 0 16px">
+      <img src="/mascot-boasvindas.jpg" alt="Tia Teta" style="width:150px;border-radius:16px;box-shadow:var(--shadow-md)">
+    </div>
+    <div class="card">
+      <h2 style="font-size:18px;margin-bottom:6px">${isEn?'One quick question':'Uma pergunta rápida'}</h2>
+      <p style="font-size:13px;color:var(--sub);margin:0 0 16px">${isEn?'This helps us set things up right for you.':'Isso ajuda a preparar o app do jeito certo pra você.'}</p>
+      <button class="btn btn-block" data-role="student" style="text-align:left;padding:16px;margin-bottom:10px;display:flex;align-items:center;gap:12px">
+        <span style="font-size:24px">🎓</span>
+        <span>
+          <strong style="display:block;font-size:14px">${isEn?'I am a student':'Sou estudante'}</strong>
+          <span style="font-size:12px;color:var(--sub)">${isEn?"I'll create my own profile to study":'Vou criar meu próprio perfil para estudar'}</span>
+        </span>
+      </button>
+      <button class="btn btn-block" data-role="parent" style="text-align:left;padding:16px;display:flex;align-items:center;gap:12px">
+        <span style="font-size:24px">👨‍👩‍👧</span>
+        <span>
+          <strong style="display:block;font-size:14px">${isEn?"I'm a parent/guardian":'Sou pai, mãe ou responsável'}</strong>
+          <span style="font-size:12px;color:var(--sub)">${isEn?"I'll create profiles for my kids":'Vou criar o perfil dos meus filhos'}</span>
+        </span>
+      </button>
+    </div>
+  </div>`;
+}
+
+function bindRoleEvents(){
+  document.querySelectorAll('[data-role]').forEach(b=>b.onclick = async ()=>{
+    const role = b.dataset.role;
+    try{ await db.auth.updateUser({ data: { role } }); }catch(e){ console.warn('não consegui salvar role', e); }
+    state.role = role;
     render();
   });
 }
@@ -485,26 +551,50 @@ function bindAuthEvents(){
 }
 
 
+function renderEditChildForm(c){
+  return `<div class="card" style="border:2px solid var(--teal)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <p class="section-title" style="margin-bottom:0">✏️ ${escapeHtml(c.name)}</p>
+      <button class="btn-ghost" id="cancel-edit-child">${t('close')}</button>
+    </div>
+    <label class="field-label">${t('name')}</label>
+    <input type="text" id="edit-name" value="${escapeHtml(c.name)}" style="margin-bottom:10px">
+    <label class="field-label">${t('age')}: <span id="edit-age-out">${c.age}</span> anos</label>
+    <input type="range" min="4" max="13" value="${c.age}" id="edit-age" style="margin-bottom:10px">
+    <label class="field-label">${t('school')}</label>
+    <input type="text" id="edit-school" value="${escapeHtml(c.school||'')}" style="margin-bottom:10px">
+    <label class="field-label">${tk('prefs_q')}</label>
+    <div id="edit-pref-chips" style="margin-bottom:12px">${PREF_OPTIONS.map(p=>`<span class="chip ${c.prefs.includes(p.id)?'on':''}" data-editpref="${p.id}">${p.em} ${p.label}</span>`).join('')}</div>
+    <button class="btn btn-primary btn-block" id="save-edit-child-btn">Salvar alterações</button>
+    <p class="err" id="edit-child-err" style="display:none"></p>
+  </div>`;
+}
+
 function renderFilhos(){
-  let h = `<h2 style="font-size:17px;margin-bottom:12px">${t('my_kids')}</h2>`;
+  let h = `<h2 style="font-size:17px;margin-bottom:12px">${tk('my_kids')}</h2>`;
   if(!state.children.length){
-    h += `<div class="card empty"><img src="/mascot-vazio.jpg" alt="" style="width:120px;border-radius:12px;margin-bottom:10px">${t('no_child')}</div>`;
+    h += `<div class="card empty"><img src="/mascot-vazio.jpg" alt="" style="width:120px;border-radius:12px;margin-bottom:10px">${tk('no_child')}</div>`;
   }
   for(const c of state.children){
+    if(state.editingChildId === c.id){
+      h += renderEditChildForm(c);
+      continue;
+    }
     h += `<div class="child-row ${c.id===state.activeChildId?'active':''}" data-select-child="${c.id}">
       <div class="avatar">${c.prefs[0]?prefEmoji(c.prefs[0]):'🙂'}</div>
       <div class="child-meta"><strong>${escapeHtml(c.name)}</strong><small>${c.age} anos · ${c.school?escapeHtml(c.school)+' · ':''}${c.prefs.map(prefLabel).join(', ')||'sem preferências'}</small></div>
+      <button class="btn-ghost no-print" data-edit-child="${c.id}" aria-label="Editar" style="padding:4px 8px">✏️</button>
     </div>`;
   }
 
   const showForm = state.children.length===0 || state.showAddChild;
 
   if(!showForm){
-    h += `<button class="btn btn-block" id="toggle-add-child">${t('add_another')}</button>`;
+    h += `<button class="btn btn-block" id="toggle-add-child">${tk('add_another')}</button>`;
   } else {
     h += `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <p class="section-title" style="margin-bottom:0">${t('add_child')}</p>
+        <p class="section-title" style="margin-bottom:0">${tk('add_child')}</p>
         ${state.children.length>0?`<button class="btn-ghost" id="toggle-add-child">${t('close')}</button>`:''}
       </div>
       <label class="field-label">${t('name')}</label>
@@ -513,9 +603,9 @@ function renderFilhos(){
       <input type="range" min="4" max="13" value="8" id="new-age" style="margin-bottom:10px">
       <label class="field-label">${t('school')}</label>
       <input type="text" id="new-school" placeholder="Nome do colégio" style="margin-bottom:10px">
-      <label class="field-label">${t('prefs_q')}</label>
+      <label class="field-label">${tk('prefs_q')}</label>
       <div id="pref-chips" style="margin-bottom:12px">${PREF_OPTIONS.map(p=>`<span class="chip" data-pref="${p.id}">${p.em} ${p.label}</span>`).join('')}</div>
-      <button class="btn btn-primary btn-block" id="add-child-btn">${t('add_child')}</button>
+      <button class="btn btn-primary btn-block" id="add-child-btn">${tk('add_child')}</button>
       <p class="err" id="add-child-err" style="display:none"></p>
     </div>`;
   }
@@ -654,6 +744,7 @@ let loadingTimer = null;
 function startLoadingTimer(){ state.loadingSeconds = 0; clearInterval(loadingTimer); loadingTimer = setInterval(()=>{ state.loadingSeconds++; render(); },1000); }
 function stopLoadingTimer(){ clearInterval(loadingTimer); loadingTimer = null; }
 let newChildPrefs = new Set();
+let editChildPrefs = new Set();
 const MAX_FILES = 20;
 
 function renderFilePreview(){
@@ -671,6 +762,44 @@ function renderFilePreview(){
 function bindEvents(){
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = ()=>{ state.view=b.dataset.tab; state.currentActivity=null; state.error=null; render(); });
   document.querySelectorAll('[data-select-child]').forEach(el=>el.onclick=()=>{ state.activeChildId = el.dataset.selectChild; render(); });
+
+  document.querySelectorAll('[data-edit-child]').forEach(el=>el.onclick=(ev)=>{ ev.stopPropagation(); state.editingChildId = el.dataset.editChild; editChildPrefs = new Set((state.children.find(c=>c.id===state.editingChildId)||{prefs:[]}).prefs); render(); });
+
+  const cancelEdit = document.getElementById('cancel-edit-child');
+  if(cancelEdit) cancelEdit.onclick = ()=>{ state.editingChildId = null; render(); };
+
+  document.querySelectorAll('[data-editpref]').forEach(chip=>{
+    chip.onclick = ()=>{
+      if(editChildPrefs.has(chip.dataset.editpref)) editChildPrefs.delete(chip.dataset.editpref); else editChildPrefs.add(chip.dataset.editpref);
+      chip.classList.toggle('on');
+    };
+  });
+
+  const editAgeSlider = document.getElementById('edit-age');
+  if(editAgeSlider){
+    const updateEditAge = ()=>{ const out=document.getElementById('edit-age-out'); if(out) out.textContent = editAgeSlider.value; };
+    editAgeSlider.addEventListener('input', updateEditAge);
+    editAgeSlider.addEventListener('change', updateEditAge);
+  }
+
+  const saveEditBtn = document.getElementById('save-edit-child-btn');
+  if(saveEditBtn) saveEditBtn.onclick = async ()=>{
+    const name = document.getElementById('edit-name').value.trim();
+    const age = parseInt(document.getElementById('edit-age').value,10);
+    const school = document.getElementById('edit-school').value.trim();
+    const errEl = document.getElementById('edit-child-err');
+    if(!name){ errEl.textContent='Digite o nome da criança.'; errEl.style.display='block'; return; }
+    try{
+      const updated = await updateChildInDb(state.editingChildId, { name, age, school, prefs:[...editChildPrefs] });
+      const idx = state.children.findIndex(c=>c.id===state.editingChildId);
+      if(idx>-1) state.children[idx] = updated;
+      state.editingChildId = null;
+      render();
+    }catch(e){
+      errEl.textContent = 'Não consegui salvar: ' + (e.message||'erro desconhecido');
+      errEl.style.display='block';
+    }
+  };
 
   const toggleAdd = document.getElementById('toggle-add-child');
   if(toggleAdd) toggleAdd.onclick = ()=>{ state.showAddChild = !state.showAddChild; render(); };
@@ -936,12 +1065,14 @@ function openReportModal(part){
 
   const { data: { session } } = await db.auth.getSession();
   state.session = session; state.user = session ? session.user : null;
+  state.role = state.user ? (state.user.user_metadata && state.user.user_metadata.role) || null : null;
   if(state.session) await loadUserData();
   render();
 
   db.auth.onAuthStateChange(async (event, session)=>{
     const hadSession = !!state.session;
     state.session = session; state.user = session ? session.user : null;
+    state.role = state.user ? (state.user.user_metadata && state.user.user_metadata.role) || null : null;
     if(session && !hadSession){
       state.children = []; state.activities = {}; state.activeChildId = null;
       app.innerHTML = '<div class="loading"><span class="spin-book">📖</span><br>Carregando seus dados...</div>';
@@ -949,7 +1080,7 @@ function openReportModal(part){
       render();
     } else if(!session){
       state.children = []; state.activities = {}; state.activeChildId = null; state.currentActivity = null;
-      state.view = 'filhos'; state.authError = null;
+      state.view = 'filhos'; state.authError = null; state.role = null;
       render();
     }
   });
