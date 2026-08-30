@@ -1,4 +1,4 @@
-# Estuda Comigo
+# Tia Teta
 
 Protótipo de site para mães ajudarem os filhos (até 13 anos) a estudar: resumo fácil,
 mapa mental ilustrado (pôster A4) e simulado, gerados por IA a partir de uma foto ou PDF
