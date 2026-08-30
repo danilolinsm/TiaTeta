@@ -141,7 +141,7 @@ async function updateChildInDb(id, child){
   return { id:data.id, name:data.name, age:data.age, school:data.school, prefs:data.prefs||[] };
 }
 function rowToActivity(d){
-  return { id:d.id, subject:d.subject, createdAt:new Date(d.created_at).getTime(), resumo:d.resumo, resumoVersions:d.resumo_versions||[d.resumo], mapa:d.mapa||[], mapaVersions:d.mapa_versions||[d.mapa], mapaImage:d.mapa_image||null, mapaError:null, questoes:d.questoes||[], examDate:d.exam_date||null, childId:d.child_id };
+  return { id:d.id, subject:d.subject, createdAt:new Date(d.created_at).getTime(), resumo:d.resumo, resumoVersions:d.resumo_versions||[d.resumo], mapa:d.mapa||[], mapaVersions:d.mapa_versions||[d.mapa], mapaImage:d.mapa_image||null, mapaError:null, questoes:d.questoes||[], examDate:d.exam_date||null, examId:d.exam_id||null, childId:d.child_id };
 }
 async function loadActivitiesFromDb(childId){
   const { data, error } = await db.from('activities').select('*').eq('child_id', childId).order('created_at');
@@ -151,14 +151,14 @@ async function loadActivitiesFromDb(childId){
 async function insertActivityInDb(childId, a){
   const { data, error } = await db.from('activities').insert({
     user_id: state.user.id, child_id: childId, subject:a.subject, resumo:a.resumo, resumo_versions:a.resumoVersions,
-    mapa:a.mapa, mapa_versions:a.mapaVersions, mapa_image:a.mapaImage, questoes:a.questoes, exam_date:a.examDate||null
+    mapa:a.mapa, mapa_versions:a.mapaVersions, mapa_image:a.mapaImage, questoes:a.questoes, exam_date:a.examDate||null, exam_id:a.examId||null
   }).select().single();
   if(error){ console.warn('insertActivity', error); throw error; }
   return rowToActivity(data);
 }
 async function updateActivityInDb(a){
   const { error } = await db.from('activities').update({
-    resumo:a.resumo, resumo_versions:a.resumoVersions, mapa:a.mapa, mapa_versions:a.mapaVersions, mapa_image:a.mapaImage, questoes:a.questoes, exam_date:a.examDate||null
+    resumo:a.resumo, resumo_versions:a.resumoVersions, mapa:a.mapa, mapa_versions:a.mapaVersions, mapa_image:a.mapaImage, questoes:a.questoes, exam_date:a.examDate||null, exam_id:a.examId||null
   }).eq('id', a.id);
   if(error) console.warn('updateActivity', error);
 }
@@ -172,7 +172,7 @@ async function insertAttemptInDb(activity, childId, correctCount, wrongQuestions
   try{
     const { data, error } = await db.from('attempts').insert({
       user_id: state.user.id, activity_id: activity.id, child_id: childId, subject: activity.subject,
-      total_questions: activity.questoes.length, correct_count: correctCount, wrong_questions: wrongQuestions
+      total_questions: activity.questoes.length, correct_count: correctCount, wrong_questions: wrongQuestions, exam_id: activity.examId||null
     }).select().single();
     if(error) throw error;
     return data;
@@ -184,6 +184,31 @@ async function loadAttemptsForActivity(activityId){
     if(error) throw error;
     return data||[];
   }catch(e){ console.warn('loadAttempts falhou', e); return []; }
+}
+
+// ---------- provas ----------
+async function loadExamsForChild(childId){
+  try{
+    const { data, error } = await db.from('exams').select('*').eq('child_id', childId).order('exam_date', { ascending:true, nullsFirst:false });
+    if(error) throw error;
+    return data||[];
+  }catch(e){ console.warn('loadExams falhou', e); return []; }
+}
+async function insertExamInDb(childId, subject, examDate){
+  const { data, error } = await db.from('exams').insert({ user_id: state.user.id, child_id: childId, subject, exam_date: examDate||null }).select().single();
+  if(error){ console.warn('insertExam', error); throw error; }
+  return data;
+}
+async function loadExamScoreSummary(examId){
+  try{
+    const { data, error } = await db.from('attempts').select('*').eq('exam_id', examId).order('answered_at');
+    if(error) throw error;
+    if(!data.length) return null;
+    const totalCorrect = data.reduce((s,a)=>s+a.correct_count,0);
+    const totalQuestions = data.reduce((s,a)=>s+a.total_questions,0);
+    const last = data[data.length-1];
+    return { attemptsCount:data.length, avgPct: Math.round((totalCorrect/totalQuestions)*100), lastPct: Math.round((last.correct_count/last.total_questions)*100), lastDate: last.answered_at };
+  }catch(e){ console.warn('loadExamScoreSummary falhou', e); return null; }
 }
 
 // ---------- state ----------
@@ -704,6 +729,20 @@ function renderAccessRequestNote(){
   return `<p style="font-size:12px;color:var(--sub);margin:6px 0 0">🔒 A geração de imagens (pôster e ilustração das questões) está desativada para sua conta. <button class="btn-ghost no-print" id="request-access-btn" style="font-size:12px;text-decoration:underline;padding:0">Solicitar acesso por email</button></p>`;
 }
 
+async function loadExamsForCurrentChild(){
+  const child = activeChild();
+  if(!child) return;
+  state.examsLoading = true; state.exams = []; state.examSummaries = {};
+  render();
+  const exams = await loadExamsForChild(child.id);
+  state.exams = exams;
+  const summaries = await Promise.all(exams.map(ex=>loadExamScoreSummary(ex.id)));
+  state.examSummaries = {};
+  exams.forEach((ex,i)=>{ if(summaries[i]) state.examSummaries[ex.id] = summaries[i]; });
+  state.examsLoading = false;
+  render();
+}
+
 function renderLoadingCard(){
   const pct = state.loadingTotal ? Math.min(100, Math.round(((state.loadingDone||0)/state.loadingTotal)*100)) : 8;
   return `<div class="card" style="text-align:center;padding:32px 20px">
@@ -723,45 +762,108 @@ function renderEstudar(){
     ${state.children.length>1?`<select id="switch-child" style="width:auto">${state.children.map(c=>`<option value="${c.id}" ${c.id===child.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select>`:''}
   </div>`;
 
-  h += `<p class="no-print" style="font-size:11px;color:var(--sub);margin:-4px 0 4px">🎨 ${state.canGenerateImages ? 'Pôster ilustrado gerado automaticamente pela IA.' : renderAccessRequestNote()}</p>`;
-
   if(state.loading){
     h += renderLoadingCard();
-  } else if(!state.currentActivity){
-    h += `<div class="card">
-      <p class="section-title"><img src="/mascot-livro.jpg" alt="" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:-8px;margin-right:4px">${t('new_activity')}</p>
-      <label class="field-label">${t('subject')}</label>
-      <input type="text" id="subject-input" placeholder="Ex: ciclo da água, tabuada do 7..." style="margin-bottom:6px">
-      <p style="font-size:11px;color:var(--sub);margin:0 0 12px">${t('subject_hint')}</p>
-      <label class="field-label" style="display:flex;align-items:center;gap:6px"><img src="/mascot-lupa.jpg" alt="" style="width:24px;height:24px;border-radius:50%;object-fit:cover">${t('files_label')}</label>
-      <div id="upload-preview" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px"></div>
-      <div class="row" style="margin-bottom:12px">
-        <label class="btn btn-block" for="camera-input" style="text-align:center;display:block">${t('take_photo')}</label>
-        <label class="btn btn-block" for="file-input" style="text-align:center;display:block">${t('attach')}</label>
-      </div>
-      <input type="file" accept="image/*" capture="environment" id="camera-input" style="display:none">
-      <input type="file" accept="image/*,application/pdf" id="file-input" style="display:none" multiple>
-      <div style="margin:14px 0">
-        <label class="field-label">${t('q_count')} <span id="count-out">8</span></label>
-        <input type="range" min="1" max="30" value="8" id="count-input">
-      </div>
-      <div style="margin:0 0 14px">
-        <label class="field-label">📅 Data da prova (opcional)</label>
-        <input type="date" id="exam-date-input">
-      </div>
-      <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 4px;font-size:13px;${state.canGenerateImages?'cursor:pointer':'cursor:not-allowed;opacity:0.45'}">
-        <input type="checkbox" id="illustrate-questions" ${state.canGenerateImages?'':'disabled'} style="width:auto;margin-top:2px">
-        <span>${t('illustrate_q')} <span style="color:var(--sub);font-size:11px">${t('illustrate_q_hint')}</span></span>
-      </label>
-      ${!state.canGenerateImages ? renderAccessRequestNote() : ''}
-      <button class="btn btn-primary btn-block" id="generate-btn" style="margin-top:10px">${t('generate')}</button>
-      <p class="err" id="gen-err" style="display:${state.error?'block':'none'}">${state.error||''}</p>
-      <p style="font-size:11px;color:var(--sub);margin-top:10px">${t('ai_warn')}</p>
-    </div>`;
-  } else {
+    return h;
+  }
+  if(state.currentActivity){
+    h += `<p class="no-print" style="font-size:11px;color:var(--sub);margin:-4px 0 4px">🎨 ${state.canGenerateImages ? 'Pôster ilustrado gerado automaticamente pela IA.' : ''}</p>`;
     h += renderActivityResult(state.currentActivity, true);
+    return h;
+  }
+  if(state.estudarMode === 'form'){
+    h += renderNewActivityForm();
+    return h;
+  }
+  if(state.estudarMode === 'new-exam'){
+    h += renderExamForm();
+    return h;
+  }
+  // hub — tela inicial da aba Estudar
+  h += `<div class="row" style="margin-bottom:14px">
+    <button class="btn btn-primary" id="hub-new-roteiro" style="padding:16px 10px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px">
+      <span style="font-size:22px">📝</span><span style="font-size:12px">Criar novo roteiro de estudo</span>
+    </button>
+    <button class="btn" id="hub-new-exam" style="padding:16px 10px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px">
+      <span style="font-size:22px">📅</span><span style="font-size:12px">Cadastrar prova</span>
+    </button>
+  </div>`;
+
+  h += `<h3 style="font-size:14px;margin-bottom:8px">Provas cadastradas</h3>`;
+  if(state.examsLoading){
+    h += `<p style="font-size:12px;color:var(--sub)">Carregando...</p>`;
+  } else if(!state.exams || !state.exams.length){
+    h += `<div class="card empty" style="padding:20px"><span class="em">📅</span>Nenhuma prova cadastrada ainda para ${escapeHtml(child.name)}.</div>`;
+  } else {
+    for(const ex of state.exams){
+      const days = ex.exam_date ? Math.ceil((new Date(ex.exam_date) - new Date())/86400000) : null;
+      const summary = state.examSummaries && state.examSummaries[ex.id];
+      h += `<div class="card" style="padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <p style="font-size:13px;font-weight:600;margin:0">${escapeHtml(ex.subject)}</p>
+            <p style="font-size:11px;color:var(--sub);margin:2px 0 0">${ex.exam_date?new Date(ex.exam_date+'T00:00:00').toLocaleDateString('pt-BR'):'sem data definida'}${days!==null?(days>=0?` · faltam ${days}d`:' · já passou'):''}</p>
+          </div>
+          ${summary ? `<span style="font-size:13px;font-weight:700;color:${summary.lastPct>=70?'#1E6B3D':'var(--danger)'}">${summary.lastPct}%</span>` : ''}
+        </div>
+        ${summary ? `<p style="font-size:11px;color:var(--sub);margin:8px 0 0">${summary.attemptsCount} tentativa(s) · média geral ${summary.avgPct}%</p>` : `<p style="font-size:11px;color:var(--sub);margin:8px 0 0">Nenhum roteiro respondido ainda.</p>`}
+      </div>`;
+    }
   }
   return h;
+}
+
+function renderNewActivityForm(){
+  const exams = state.exams || [];
+  return `<div class="card">
+    <button class="btn-ghost no-print" id="back-to-hub" style="margin-bottom:8px">← Voltar</button>
+    <p class="section-title"><img src="/mascot-livro.jpg" alt="" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:-8px;margin-right:4px">${t('new_activity')}</p>
+    <label class="field-label">${t('subject')}</label>
+    <input type="text" id="subject-input" placeholder="Ex: ciclo da água, tabuada do 7..." style="margin-bottom:6px">
+    <p style="font-size:11px;color:var(--sub);margin:0 0 12px">${t('subject_hint')}</p>
+    <label class="field-label" style="display:flex;align-items:center;gap:6px"><img src="/mascot-lupa.jpg" alt="" style="width:24px;height:24px;border-radius:50%;object-fit:cover">${t('files_label')}</label>
+    <div id="upload-preview" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px"></div>
+    <div class="row" style="margin-bottom:12px">
+      <label class="btn btn-block" for="camera-input" style="text-align:center;display:block">${t('take_photo')}</label>
+      <label class="btn btn-block" for="file-input" style="text-align:center;display:block">${t('attach')}</label>
+    </div>
+    <input type="file" accept="image/*" capture="environment" id="camera-input" style="display:none">
+    <input type="file" accept="image/*,application/pdf" id="file-input" style="display:none" multiple>
+    <div style="margin:14px 0">
+      <label class="field-label">${t('q_count')} <span id="count-out">8</span></label>
+      <input type="range" min="1" max="30" value="8" id="count-input">
+    </div>
+
+    <label class="field-label">📅 Vincular a uma prova</label>
+    <select id="exam-link-select" style="margin-bottom:6px">
+      <option value="">Gerar sem vincular</option>
+      ${exams.map(ex=>`<option value="${ex.id}">${escapeHtml(ex.subject)}${ex.exam_date?' — '+new Date(ex.exam_date+'T00:00:00').toLocaleDateString('pt-BR'):''}</option>`).join('')}
+    </select>
+    <button class="btn" id="quick-new-exam-btn" style="font-size:12px;margin-bottom:8px">+ Cadastrar nova prova</button>
+    <p id="no-exam-warning" style="font-size:11px;color:var(--sub);margin:0 0 14px">⚠️ Sem vincular a uma prova, esse roteiro não entra no histórico comparativo de notas.</p>
+
+    <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 4px;font-size:13px;${state.canGenerateImages?'cursor:pointer':'cursor:not-allowed;opacity:0.45'}">
+      <input type="checkbox" id="illustrate-questions" ${state.canGenerateImages?'':'disabled'} style="width:auto;margin-top:2px">
+      <span>${t('illustrate_q')} <span style="color:var(--sub);font-size:11px">${t('illustrate_q_hint')}</span></span>
+    </label>
+    ${!state.canGenerateImages ? renderAccessRequestNote() : ''}
+    <button class="btn btn-primary btn-block" id="generate-btn" style="margin-top:10px">${t('generate')}</button>
+    <p class="err" id="gen-err" style="display:${state.error?'block':'none'}">${state.error||''}</p>
+    <p style="font-size:11px;color:var(--sub);margin-top:10px">${t('ai_warn')}</p>
+  </div>`;
+}
+
+function renderExamForm(){
+  return `<div class="card">
+    <button class="btn-ghost no-print" id="back-to-hub" style="margin-bottom:8px">← Voltar</button>
+    <p class="section-title">📅 Cadastrar prova</p>
+    <label class="field-label">Matéria/assunto</label>
+    <input type="text" id="new-exam-subject" placeholder="Ex: matemática, geografia..." style="margin-bottom:10px">
+    <label class="field-label">Data da prova (opcional)</label>
+    <input type="date" id="new-exam-date" style="margin-bottom:14px">
+    <button class="btn btn-primary btn-block" id="save-new-exam-btn">Salvar prova</button>
+    <p class="err" id="new-exam-err" style="display:none"></p>
+  </div>`;
 }
 
 function renderActivityResult(a, isCurrent){
@@ -817,10 +919,10 @@ function renderActivityResult(a, isCurrent){
 
     <div class="card no-print" id="agenda-block" style="background:var(--bg);border:none">
       <p class="section-title">📅 Agenda da prova</p>
-      <label class="field-label">Data da prova</label>
-      <input type="date" id="edit-exam-date" value="${a.examDate||''}" style="margin-bottom:8px">
-      <button class="btn" id="save-exam-date-btn" style="font-size:12px">Salvar data</button>
-      <div id="attempts-history" style="margin-top:12px"></div>
+      ${a.examId
+        ? `<p style="font-size:12px;color:var(--sub);margin:0 0 8px">Vinculado à prova de <strong>${escapeHtml(a.subject)}</strong>${a.examDate?` — ${new Date(a.examDate+'T00:00:00').toLocaleDateString('pt-BR')}`:''}</p>`
+        : `<p style="font-size:12px;color:var(--sub);margin:0 0 8px">Este roteiro não está vinculado a nenhuma prova (não entra no comparativo). Vincule na aba Estudar → Cadastrar prova.</p>`}
+      <div id="attempts-history" style="margin-top:8px"></div>
     </div>
 
     <div class="card map-print-page" style="background:var(--bg);border:none;margin-bottom:10px">
@@ -905,7 +1007,11 @@ function renderFilePreview(){
 }
 
 function bindEvents(){
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = ()=>{ state.view=b.dataset.tab; state.currentActivity=null; state.error=null; state.showAdmin=false; render(); });
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = ()=>{
+    state.view=b.dataset.tab; state.currentActivity=null; state.error=null; state.showAdmin=false; state.estudarMode=null;
+    render();
+    if(state.view==='estudar') loadExamsForCurrentChild();
+  });
   document.querySelectorAll('[data-select-child]').forEach(el=>el.onclick=()=>{ state.activeChildId = el.dataset.selectChild; render(); });
 
   document.querySelectorAll('[data-edit-child]').forEach(el=>el.onclick=(ev)=>{ ev.stopPropagation(); state.editingChildId = el.dataset.editChild; editChildPrefs = new Set((state.children.find(c=>c.id===state.editingChildId)||{prefs:[]}).prefs); render(); });
@@ -987,11 +1093,51 @@ function bindEvents(){
   };
 
   const switchSel = document.getElementById('switch-child');
-  if(switchSel) switchSel.onchange = ()=>{ state.activeChildId = switchSel.value; state.currentActivity=null; render(); };
+  if(switchSel) switchSel.onchange = ()=>{ state.activeChildId = switchSel.value; state.currentActivity=null; state.estudarMode=null; render(); loadExamsForCurrentChild(); };
 
   const switchSelHist = document.getElementById('switch-child-hist');
   if(switchSelHist) switchSelHist.onchange = ()=>{ state.activeChildId = switchSelHist.value; state.openHistoryId=null; render(); };
 
+
+  const hubNewRoteiro = document.getElementById('hub-new-roteiro');
+  if(hubNewRoteiro) hubNewRoteiro.onclick = ()=>{ state.estudarMode='form'; render(); };
+
+  const hubNewExam = document.getElementById('hub-new-exam');
+  if(hubNewExam) hubNewExam.onclick = ()=>{ state.examFormReturnTo='hub'; state.estudarMode='new-exam'; render(); };
+
+  const quickNewExamBtn = document.getElementById('quick-new-exam-btn');
+  if(quickNewExamBtn) quickNewExamBtn.onclick = ()=>{ state.examFormReturnTo='form'; state.estudarMode='new-exam'; render(); };
+
+  const backToHub = document.getElementById('back-to-hub');
+  if(backToHub) backToHub.onclick = ()=>{ state.estudarMode=null; render(); };
+
+  const saveNewExamBtn = document.getElementById('save-new-exam-btn');
+  if(saveNewExamBtn) saveNewExamBtn.onclick = async ()=>{
+    const subject = document.getElementById('new-exam-subject').value.trim();
+    const examDate = document.getElementById('new-exam-date').value || null;
+    const errEl = document.getElementById('new-exam-err');
+    if(!subject){ errEl.textContent='Digite a matéria/assunto da prova.'; errEl.style.display='block'; return; }
+    try{
+      const child = activeChild();
+      const newExam = await insertExamInDb(child.id, subject, examDate);
+      state.exams = [...(state.exams||[]), newExam];
+      state.pendingExamSelection = newExam.id;
+      state.estudarMode = state.examFormReturnTo === 'form' ? 'form' : null;
+      render();
+    }catch(e){
+      errEl.textContent = 'Não consegui salvar: ' + (e.message||'erro desconhecido');
+      errEl.style.display='block';
+    }
+  };
+
+  const examLinkSelect = document.getElementById('exam-link-select');
+  if(examLinkSelect){
+    if(state.pendingExamSelection){ examLinkSelect.value = state.pendingExamSelection; state.pendingExamSelection = null; }
+    const warnEl = document.getElementById('no-exam-warning');
+    const updateWarn = ()=>{ if(warnEl) warnEl.style.display = examLinkSelect.value ? 'none' : 'block'; };
+    updateWarn();
+    examLinkSelect.addEventListener('change', updateWarn);
+  }
 
   const cameraInput = document.getElementById('camera-input');
   const fileInput = document.getElementById('file-input');
@@ -1116,8 +1262,8 @@ function compressImage(file){
       const mapaRevisado = result.mapa.map((n,i)=>({...n, label: revised[i+1]||n.label}));
       state.loadingDone = 2;
 
-      const examDateVal = document.getElementById('exam-date-input')?.value || null;
-      const activity = { id:'a'+Date.now(), subject, createdAt: Date.now(), resumo: resumoRevisado, resumoVersions:[resumoRevisado], mapa: mapaRevisado, mapaVersions:[mapaRevisado], mapaImage:null, questoes: result.questoes, examDate: examDateVal };
+      const selectedExam = (state.exams||[]).find(ex=>ex.id===document.getElementById('exam-link-select')?.value);
+      const activity = { id:'a'+Date.now(), subject, createdAt: Date.now(), resumo: resumoRevisado, resumoVersions:[resumoRevisado], mapa: mapaRevisado, mapaVersions:[mapaRevisado], mapaImage:null, questoes: result.questoes, examId: selectedExam?selectedExam.id:null, examDate: selectedExam?selectedExam.exam_date:null };
 
       if(state.canGenerateImages){
         state.loadingMsg = 'Desenhando o pôster ilustrado (pode levar até 40s)...'; render();
@@ -1149,7 +1295,7 @@ function compressImage(file){
   };
 
   const newActBtn = document.getElementById('new-activity-btn');
-  if(newActBtn) newActBtn.onclick = ()=>{ state.currentActivity = null; render(); };
+  if(newActBtn) newActBtn.onclick = ()=>{ state.currentActivity = null; state.estudarMode = null; render(); loadExamsForCurrentChild(); };
 
   document.querySelectorAll('[data-report]').forEach(b=>b.onclick = ()=> openReportModal(b.dataset.report));
 
@@ -1233,16 +1379,6 @@ function compressImage(file){
       setTimeout(()=>{window.__toast=null;render();},4000);
       render();
     }
-  };
-
-  const saveExamDateBtn = document.getElementById('save-exam-date-btn');
-  if(saveExamDateBtn) saveExamDateBtn.onclick = async ()=>{
-    const a = state.currentActivity || findOpenHistoryActivity();
-    a.examDate = document.getElementById('edit-exam-date').value || null;
-    saveExamDateBtn.textContent = 'Salvando...';
-    await persistIfSaved(a);
-    saveExamDateBtn.textContent = 'Salvo ✓';
-    setTimeout(()=>{ saveExamDateBtn.textContent = 'Salvar data'; },1800);
   };
 
   const attemptsHistoryEl = document.getElementById('attempts-history');
