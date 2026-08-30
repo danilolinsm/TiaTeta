@@ -475,8 +475,8 @@ function bindLangToggle(){
 function renderRoleScreen(){
   const isEn = state.lang==='en';
   return `<div class="view">
-    <div style="text-align:center;margin:6px 0 16px">
-      <img src="/mascot-boasvindas.jpg" alt="Tia Teta" style="width:150px;border-radius:16px;box-shadow:var(--shadow-md)">
+    <div style="margin:-16px -16px 16px -16px">
+      <img src="/mascot-boasvindas.jpg" alt="Tia Teta" style="width:100%;display:block;aspect-ratio:16/9;object-fit:cover;object-position:center 30%;border-radius:0 0 22px 22px;box-shadow:var(--shadow-md)">
     </div>
     <div class="card">
       <h2 style="font-size:18px;margin-bottom:6px">${isEn?'One quick question':'Uma pergunta rápida'}</h2>
@@ -510,11 +510,11 @@ function bindRoleEvents(){
 
 function renderAuthScreen(){
   const signup = state.authMode==='signup';
-  return `<div class="view">
-    <div style="text-align:center;margin:6px 0 16px">
-      <img src="/mascot-boasvindas.jpg" alt="Tia Teta" style="width:150px;border-radius:16px;box-shadow:var(--shadow-md)">
+  return `<div class="view" style="padding-top:0">
+    <div style="margin:-16px -16px 0 -16px;position:relative">
+      <img src="/mascot-boasvindas.jpg" alt="Tia Teta" style="width:100%;display:block;aspect-ratio:16/9;object-fit:cover;object-position:center 30%;border-radius:0 0 22px 22px;box-shadow:var(--shadow-md)">
     </div>
-    <div class="card" style="margin-top:0">
+    <div class="card" style="margin:-28px 6px 0 6px;position:relative;border-radius:20px 20px var(--r) var(--r);box-shadow:var(--shadow-md)">
       <h2 style="font-size:18px;margin-bottom:4px">${signup?t('signup'):t('login')}</h2>
       <p style="font-size:12px;color:var(--sub);margin:0 0 14px">${t('auth_subtitle')}</p>
       <label class="field-label">${t('email')}</label>
@@ -1064,6 +1064,12 @@ function openAccountModal(){
     <input type="text" id="acc-name" value="${escapeHtml(fullName)}" placeholder="${isEn?'Your name':'Seu nome'}" style="margin-bottom:8px">
     <button class="btn btn-block" id="acc-save-name" style="margin-bottom:16px">${isEn?'Save name':'Salvar nome'}</button>
 
+    <label class="field-label">${isEn?'How do you use the app?':'Como você usa o app?'}</label>
+    <div class="row" style="margin-bottom:16px">
+      <button class="btn ${state.role==='student'?'btn-primary':''}" id="acc-role-student" style="text-align:left;padding:10px 12px">🎓 ${isEn?'Student':'Estudante'}</button>
+      <button class="btn ${state.role==='parent'?'btn-primary':''}" id="acc-role-parent" style="text-align:left;padding:10px 12px">👨‍👩‍👧 ${isEn?'Parent':'Pai/mãe'}</button>
+    </div>
+
     <label class="field-label">${isEn?'New password':'Nova senha'}</label>
     <input type="password" id="acc-pw1" placeholder="${isEn?'Min. 6 characters':'Mínimo 6 caracteres'}" style="margin-bottom:8px">
     <label class="field-label">${isEn?'Confirm new password':'Confirmar nova senha'}</label>
@@ -1078,6 +1084,15 @@ function openAccountModal(){
   render();
 
   document.getElementById('modal-cancel').onclick = ()=>{ window.__modal=null; render(); };
+
+  document.getElementById('acc-role-student').onclick = ()=> switchRole('student');
+  document.getElementById('acc-role-parent').onclick = ()=> switchRole('parent');
+  async function switchRole(role){
+    if(state.role===role) return;
+    try{ await db.auth.updateUser({ data:{ role } }); }catch(e){ console.warn('não consegui salvar role', e); }
+    state.role = role;
+    openAccountModal();
+  }
 
   document.getElementById('acc-save-name').onclick = async ()=>{
     const name = document.getElementById('acc-name').value.trim();
