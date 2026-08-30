@@ -189,9 +189,16 @@ async function loadAttemptsForActivity(activityId){
 // ---------- provas ----------
 async function loadExamsForChild(childId){
   try{
-    const { data, error } = await db.from('exams').select('*').eq('child_id', childId).order('exam_date', { ascending:true, nullsFirst:false });
+    const { data, error } = await db.from('exams').select('*').eq('child_id', childId);
     if(error) throw error;
-    return data||[];
+    const list = data||[];
+    list.sort((a,b)=>{
+      if(!a.exam_date && !b.exam_date) return 0;
+      if(!a.exam_date) return 1;
+      if(!b.exam_date) return -1;
+      return new Date(a.exam_date) - new Date(b.exam_date);
+    });
+    return list;
   }catch(e){ console.warn('loadExams falhou', e); return []; }
 }
 async function insertExamInDb(childId, subject, examDate, notes){
@@ -601,8 +608,8 @@ function render(){
   if(window.__modal) html += window.__modal;
   if(window.__toast) html += `<div class="no-print" style="position:fixed;bottom:76px;left:12px;right:12px;max-width:456px;margin:0 auto;background:var(--ink);color:#fff;font-size:12px;padding:10px 14px;border-radius:10px;z-index:30">${window.__toast}</div>`;
   app.innerHTML = html;
-  bindEvents();
-  bindAdminEvents();
+  try{ bindEvents(); }catch(e){ console.error('bindEvents falhou:', e); }
+  try{ bindAdminEvents(); }catch(e){ console.error('bindAdminEvents falhou:', e); }
   bindLangToggle();
   const logoutBtn = document.getElementById('logout-btn');
   if(logoutBtn) logoutBtn.onclick = async ()=>{ await db.auth.signOut(); };
