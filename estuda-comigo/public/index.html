@@ -98,7 +98,21 @@
   .toggle button.on{background:var(--teal);color:#fff}
   .err{color:var(--danger);font-size:12px;margin-top:6px}
   .hist-item{padding:12px;border-radius:10px;border:1px solid var(--line);background:#fff;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .q-opts-interactive{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+  .q-opt{text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--ink)}
+  .q-opt.selected{border-color:var(--teal);background:var(--teal-soft)}
+  .q-opt.correct{border-color:#2E8B57;background:#E6F4EA;color:#1E6B3D;font-weight:600}
+  .q-opt.wrong{border-color:var(--danger);background:#FBEAE8;color:var(--danger);font-weight:600}
+  .q-opt:disabled{opacity:1}
   @media print{
+    @page{ margin: 10mm; }
+    nav.tabs, .no-print{display:none!important}
+    body{background:#fff}
+    #app{max-width:none;padding-bottom:0}
+    .card{border:none;padding:0;margin-bottom:16px}
+    .map-print-page{page-break-before:always; break-before:page; padding-top:4mm}
+    .print-only{display:block!important}
+  }
     @page{ margin: 10mm; }
     nav.tabs, .no-print{display:none!important}
     body{background:#fff}
@@ -134,7 +148,7 @@ async function updateChildInDb(id, child){
   return { id:data.id, name:data.name, age:data.age, school:data.school, prefs:data.prefs||[] };
 }
 function rowToActivity(d){
-  return { id:d.id, subject:d.subject, createdAt:new Date(d.created_at).getTime(), resumo:d.resumo, resumoVersions:d.resumo_versions||[d.resumo], mapa:d.mapa||[], mapaVersions:d.mapa_versions||[d.mapa], mapaImage:d.mapa_image||null, mapaError:null, questoes:d.questoes||[] };
+  return { id:d.id, subject:d.subject, createdAt:new Date(d.created_at).getTime(), resumo:d.resumo, resumoVersions:d.resumo_versions||[d.resumo], mapa:d.mapa||[], mapaVersions:d.mapa_versions||[d.mapa], mapaImage:d.mapa_image||null, mapaError:null, questoes:d.questoes||[], examDate:d.exam_date||null, childId:d.child_id };
 }
 async function loadActivitiesFromDb(childId){
   const { data, error } = await db.from('activities').select('*').eq('child_id', childId).order('created_at');
@@ -144,14 +158,14 @@ async function loadActivitiesFromDb(childId){
 async function insertActivityInDb(childId, a){
   const { data, error } = await db.from('activities').insert({
     user_id: state.user.id, child_id: childId, subject:a.subject, resumo:a.resumo, resumo_versions:a.resumoVersions,
-    mapa:a.mapa, mapa_versions:a.mapaVersions, mapa_image:a.mapaImage, questoes:a.questoes
+    mapa:a.mapa, mapa_versions:a.mapaVersions, mapa_image:a.mapaImage, questoes:a.questoes, exam_date:a.examDate||null
   }).select().single();
   if(error){ console.warn('insertActivity', error); throw error; }
   return rowToActivity(data);
 }
 async function updateActivityInDb(a){
   const { error } = await db.from('activities').update({
-    resumo:a.resumo, resumo_versions:a.resumoVersions, mapa:a.mapa, mapa_versions:a.mapaVersions, mapa_image:a.mapaImage, questoes:a.questoes
+    resumo:a.resumo, resumo_versions:a.resumoVersions, mapa:a.mapa, mapa_versions:a.mapaVersions, mapa_image:a.mapaImage, questoes:a.questoes, exam_date:a.examDate||null
   }).eq('id', a.id);
   if(error) console.warn('updateActivity', error);
 }
@@ -159,6 +173,24 @@ async function persistIfSaved(a){
   const child = activeChild();
   if(!child) return;
   if((state.activities[child.id]||[]).find(x=>x.id===a.id)) await updateActivityInDb(a);
+}
+
+async function insertAttemptInDb(activity, childId, correctCount, wrongQuestions){
+  try{
+    const { data, error } = await db.from('attempts').insert({
+      user_id: state.user.id, activity_id: activity.id, child_id: childId, subject: activity.subject,
+      total_questions: activity.questoes.length, correct_count: correctCount, wrong_questions: wrongQuestions
+    }).select().single();
+    if(error) throw error;
+    return data;
+  }catch(e){ console.warn('insertAttempt falhou', e); return null; }
+}
+async function loadAttemptsForActivity(activityId){
+  try{
+    const { data, error } = await db.from('attempts').select('*').eq('activity_id', activityId).order('answered_at');
+    if(error) throw error;
+    return data||[];
+  }catch(e){ console.warn('loadAttempts falhou', e); return []; }
 }
 
 // ---------- state ----------
@@ -404,6 +436,38 @@ Problema reportado pela mãe: "${feedback}"
 Gere APENAS um JSON: {"mapa":[{"label":"...","emoji":"..."}, ... 4 a 6 itens]}`;
   }
   return await callClaude(prompt, null);
+}
+
+async function getQuestionHint(question, age){
+  const prompt = `Uma criança de ${age} anos está tentando responder esta questão de múltipla escolha sozinha:
+"${question.pergunta}"
+Alternativas: ${question.opcoes.map((o,i)=>`${String.fromCharCode(97+i)}) ${o}`).join(', ')}
+
+Dê APENAS uma dica curta (1-2 frases) que ajude a criança a pensar no caminho certo, do jeito socrático: faça uma pergunta ou aponte um detalhe importante, mas NUNCA diga qual é a alternativa correta nem entregue a resposta.
+Responda em texto simples, sem JSON, sem markdown — só a dica.`;
+  const res = await fetch('/api/claude', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ prompt, images: [] })
+  });
+  const data = await res.json();
+  if(data.error) throw new Error(data.error);
+  return (data.text||'').trim();
+}
+
+async function generateWeakFocusQuestions(activity, wrongTexts, count, age){
+  const prompt = `Uma criança de ${age} anos errou estas questões sobre "${activity.subject}":
+${wrongTexts.map((w,i)=>`${i+1}. ${w}`).join('\n')}
+
+Gere ${count} questões NOVAS de múltipla escolha (4 alternativas cada) sobre o(s) MESMO(S) conceito(s) dessas questões que ela errou — mesma dificuldade, mas com números/situações diferentes, pra ela praticar de novo até fixar.
+Responda APENAS um JSON, sem markdown: {"questoes":[{"pergunta":"...","opcoes":["a","b","c","d"],"correta":0}, ...]}`;
+  const res = await fetch('/api/claude', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ prompt, images: [] })
+  });
+  const data = await res.json();
+  if(data.error) throw new Error(data.error);
+  const clean = (data.text||'').replace(/```json|```/g,'').trim();
+  return JSON.parse(clean).questoes;
 }
 
 async function regenerateQuestion(activity){
@@ -688,6 +752,10 @@ function renderEstudar(){
         <label class="field-label">${t('q_count')} <span id="count-out">8</span></label>
         <input type="range" min="1" max="30" value="8" id="count-input">
       </div>
+      <div style="margin:0 0 14px">
+        <label class="field-label">📅 Data da prova (opcional)</label>
+        <input type="date" id="exam-date-input">
+      </div>
       <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 4px;font-size:13px;${state.canGenerateImages?'cursor:pointer':'cursor:not-allowed;opacity:0.45'}">
         <input type="checkbox" id="illustrate-questions" ${state.canGenerateImages?'':'disabled'} style="width:auto;margin-top:2px">
         <span>${t('illustrate_q')} <span style="color:var(--sub);font-size:11px">${t('illustrate_q_hint')}</span></span>
@@ -720,15 +788,46 @@ function renderActivityResult(a, isCurrent){
     </div>
 
     <div class="card" style="background:var(--bg);border:none">
-      <p class="section-title">${t('simulado')} (${a.questoes.length})</p>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <p class="section-title">${t('simulado')} (${a.questoes.length})</p>
+        ${a.quizChecked ? `<span style="font-size:12px;font-weight:600;color:var(--teal-dark)">${a.quizScore}/${a.questoes.length} ✓</span>` : ''}
+      </div>
       ${a.questoes.map((q,i)=>`<div class="q-row">
         <div class="q-top">
           <p><strong>${i+1}.</strong> ${escapeHtml(q.pergunta)}</p>
           <button class="btn-danger no-print" data-del-q="${i}" aria-label="Deletar questão">✕</button>
         </div>
         ${q.imagem ? `<img src="${q.imagem}" alt="Ilustração da questão ${i+1}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;margin:6px 0">` : ''}
-        <div class="q-opts">${q.opcoes.map((o,oi)=>`${String.fromCharCode(97+oi)}) ${escapeHtml(o)}`).join(' &nbsp; ')}</div>
+        <div class="q-opts-interactive">${q.opcoes.map((o,oi)=>{
+          let cls = 'q-opt';
+          if(a.quizChecked){
+            if(oi===q.correta) cls += ' correct';
+            else if(oi===q.userAnswer) cls += ' wrong';
+          } else if(oi===q.userAnswer){
+            cls += ' selected';
+          }
+          return `<button class="${cls} no-print" data-answer-q="${i}" data-answer-opt="${oi}" ${a.quizChecked?'disabled':''}>${String.fromCharCode(97+oi)}) ${escapeHtml(o)}</button>`;
+        }).join('')}</div>
+        <div class="q-opts print-only" style="display:none">${q.opcoes.map((o,oi)=>`${String.fromCharCode(97+oi)}) ${escapeHtml(o)}`).join(' &nbsp; ')}</div>
+        ${!a.quizChecked ? `<button class="btn-ghost no-print" data-hint-q="${i}" style="font-size:12px;margin-top:4px">💡 ${q.dica?'Ver dica':'Pedir uma dica'}</button>${q.dica?`<p class="no-print" style="font-size:12px;background:var(--teal-soft);border-radius:8px;padding:8px 10px;margin-top:6px">${escapeHtml(q.dica)}</p>`:''}` : ''}
       </div>`).join('')}
+      ${!a.quizChecked
+        ? `<button class="btn btn-primary btn-block no-print" id="check-quiz-btn" style="margin-top:8px">Corrigir simulado</button>`
+        : `<div class="no-print" style="margin-top:10px">
+             <p style="font-size:13px;font-weight:600;text-align:center;margin:0 0 10px">Você acertou ${a.quizScore} de ${a.questoes.length} 🎉</p>
+             <div class="row">
+               <button class="btn" id="retry-quiz-btn">🔄 Mesmas questões</button>
+               ${a.quizScore < a.questoes.length ? `<button class="btn btn-primary" id="focus-weak-btn">🎯 Focar no que errei</button>` : ''}
+             </div>
+           </div>`}
+    </div>
+
+    <div class="card no-print" id="agenda-block" style="background:var(--bg);border:none">
+      <p class="section-title">📅 Agenda da prova</p>
+      <label class="field-label">Data da prova</label>
+      <input type="date" id="edit-exam-date" value="${a.examDate||''}" style="margin-bottom:8px">
+      <button class="btn" id="save-exam-date-btn" style="font-size:12px">Salvar data</button>
+      <div id="attempts-history" style="margin-top:12px"></div>
     </div>
 
     <div class="card map-print-page" style="background:var(--bg);border:none;margin-bottom:10px">
@@ -775,8 +874,13 @@ function renderHistorico(){
     }
   }
   for(const a of acts.slice().reverse()){
+    let examBadge = '';
+    if(a.examDate){
+      const days = Math.ceil((new Date(a.examDate) - new Date())/86400000);
+      examBadge = days>=0 ? `<br><small style="color:var(--teal-dark);font-weight:600">⏳ ${days}d p/ prova</small>` : '';
+    }
     h += `<div class="hist-item" data-open-hist="${a.id}">
-      <div><strong style="font-size:14px">${escapeHtml(a.subject)}</strong><br><small style="color:var(--sub)">${new Date(a.createdAt).toLocaleDateString('pt-BR')} · ${a.questoes.length} questões</small></div>
+      <div><strong style="font-size:14px">${escapeHtml(a.subject)}</strong><br><small style="color:var(--sub)">${new Date(a.createdAt).toLocaleDateString('pt-BR')} · ${a.questoes.length} questões</small>${examBadge}</div>
       <span style="color:var(--sub)">›</span>
     </div>`;
   }
@@ -1019,7 +1123,8 @@ function compressImage(file){
       const mapaRevisado = result.mapa.map((n,i)=>({...n, label: revised[i+1]||n.label}));
       state.loadingDone = 2;
 
-      const activity = { id:'a'+Date.now(), subject, createdAt: Date.now(), resumo: resumoRevisado, resumoVersions:[resumoRevisado], mapa: mapaRevisado, mapaVersions:[mapaRevisado], mapaImage:null, questoes: result.questoes };
+      const examDateVal = document.getElementById('exam-date-input')?.value || null;
+      const activity = { id:'a'+Date.now(), subject, createdAt: Date.now(), resumo: resumoRevisado, resumoVersions:[resumoRevisado], mapa: mapaRevisado, mapaVersions:[mapaRevisado], mapaImage:null, questoes: result.questoes, examDate: examDateVal };
 
       if(state.canGenerateImages){
         state.loadingMsg = 'Desenhando o pôster ilustrado (pode levar até 40s)...'; render();
@@ -1068,7 +1173,111 @@ function compressImage(file){
     render();
   });
 
-  const printBtn = document.getElementById('print-btn');
+  document.querySelectorAll('[data-answer-q]').forEach(b=>b.onclick = ()=>{
+    const a = state.currentActivity || findOpenHistoryActivity();
+    if(a.quizChecked) return;
+    const qi = parseInt(b.dataset.answerQ,10);
+    const oi = parseInt(b.dataset.answerOpt,10);
+    a.questoes[qi].userAnswer = oi;
+    render();
+  });
+
+  document.querySelectorAll('[data-hint-q]').forEach(b=>b.onclick = async ()=>{
+    const a = state.currentActivity || findOpenHistoryActivity();
+    const qi = parseInt(b.dataset.hintQ,10);
+    const q = a.questoes[qi];
+    if(q.dica) return;
+    b.textContent = 'Pensando...'; b.disabled = true;
+    try{
+      const child = activeChild();
+      q.dica = await getQuestionHint(q, child?.age||8);
+    }catch(e){ q.dica = 'Não consegui gerar uma dica agora, tente responder do seu jeito!'; }
+    await persistIfSaved(a);
+    render();
+  });
+
+  const checkQuizBtn = document.getElementById('check-quiz-btn');
+  if(checkQuizBtn) checkQuizBtn.onclick = async ()=>{
+    const a = state.currentActivity || findOpenHistoryActivity();
+    let correctCount = 0;
+    const wrongQuestions = [];
+    a.questoes.forEach(q=>{
+      if(q.userAnswer===undefined || q.userAnswer===null){ wrongQuestions.push(q.pergunta); return; }
+      if(q.userAnswer===q.correta) correctCount++;
+      else wrongQuestions.push(q.pergunta);
+    });
+    a.quizChecked = true;
+    a.quizScore = correctCount;
+    render();
+    const child = activeChild();
+    await insertAttemptInDb(a, child.id, correctCount, wrongQuestions);
+    await persistIfSaved(a);
+  };
+
+  const retryQuizBtn = document.getElementById('retry-quiz-btn');
+  if(retryQuizBtn) retryQuizBtn.onclick = ()=>{
+    const a = state.currentActivity || findOpenHistoryActivity();
+    a.quizChecked = false; a.quizScore = null;
+    a.questoes.forEach(q=>{ delete q.userAnswer; });
+    render();
+  };
+
+  const focusWeakBtn = document.getElementById('focus-weak-btn');
+  if(focusWeakBtn) focusWeakBtn.onclick = async ()=>{
+    const a = state.currentActivity || findOpenHistoryActivity();
+    const wrongTexts = a.questoes.filter(q=>q.userAnswer!==q.correta).map(q=>q.pergunta);
+    if(!wrongTexts.length) return;
+    focusWeakBtn.disabled = true; focusWeakBtn.textContent = 'Gerando...';
+    try{
+      const child = activeChild();
+      const novas = await generateWeakFocusQuestions(a, wrongTexts, wrongTexts.length, child?.age||8);
+      a.questoes = novas;
+      a.quizChecked = false; a.quizScore = null;
+      await persistIfSaved(a);
+      render();
+    }catch(e){
+      window.__toast = 'Não consegui gerar as questões de foco agora. Tente de novo.';
+      setTimeout(()=>{window.__toast=null;render();},4000);
+      render();
+    }
+  };
+
+  const saveExamDateBtn = document.getElementById('save-exam-date-btn');
+  if(saveExamDateBtn) saveExamDateBtn.onclick = async ()=>{
+    const a = state.currentActivity || findOpenHistoryActivity();
+    a.examDate = document.getElementById('edit-exam-date').value || null;
+    saveExamDateBtn.textContent = 'Salvando...';
+    await persistIfSaved(a);
+    saveExamDateBtn.textContent = 'Salvo ✓';
+    setTimeout(()=>{ saveExamDateBtn.textContent = 'Salvar data'; },1800);
+  };
+
+  const attemptsHistoryEl = document.getElementById('attempts-history');
+  if(attemptsHistoryEl){
+    const a = state.currentActivity || findOpenHistoryActivity();
+    if(a && (state.activities[activeChild()?.id]||[]).find(x=>x.id===a.id)){
+      loadAttemptsForActivity(a.id).then(attempts=>{
+        if(!attempts.length) return;
+        const daysLeft = a.examDate ? Math.ceil((new Date(a.examDate) - new Date())/86400000) : null;
+        let html = '';
+        if(daysLeft!==null){
+          html += `<p style="font-size:12px;color:var(--sub);margin:0 0 8px">${daysLeft>=0?`⏳ Faltam ${daysLeft} dia(s) para a prova`:'📌 Data da prova já passou'}</p>`;
+        }
+        html += `<p style="font-size:12px;font-weight:600;margin:0 0 6px">Histórico de tentativas</p>`;
+        html += attempts.map(at=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-top:1px solid var(--line)"><span>${new Date(at.answered_at).toLocaleDateString('pt-BR')}</span><span>${at.correct_count}/${at.total_questions}</span></div>`).join('');
+        const allWrong = attempts.flatMap(at=>at.wrong_questions||[]);
+        if(allWrong.length){
+          const freq = {};
+          allWrong.forEach(w=>{ freq[w]=(freq[w]||0)+1; });
+          const topWeak = Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,3);
+          html += `<p style="font-size:12px;font-weight:600;margin:10px 0 6px">🎯 Pontos que mais precisam de revisão</p>`;
+          html += topWeak.map(([q,n])=>`<p style="font-size:12px;color:var(--sub);margin:2px 0">${escapeHtml(q)} <span style="color:var(--danger)">(errou ${n}x)</span></p>`).join('');
+        }
+        attemptsHistoryEl.innerHTML = html;
+      });
+    }
+  }
+
   if(printBtn) printBtn.onclick = ()=> window.print();
 
   const saveBtn = document.getElementById('save-activity-btn');
