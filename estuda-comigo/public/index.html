@@ -141,7 +141,9 @@ async function updateChildInDb(id, child){
   return { id:data.id, name:data.name, age:data.age, school:data.school, prefs:data.prefs||[] };
 }
 function rowToActivity(d){
-  return { id:d.id, subject:d.subject, createdAt:new Date(d.created_at).getTime(), resumo:d.resumo, resumoVersions:d.resumo_versions||[d.resumo], mapa:d.mapa||[], mapaVersions:d.mapa_versions||[d.mapa], mapaImage:d.mapa_image||null, mapaError:null, questoes:d.questoes||[], examDate:d.exam_date||null, examId:d.exam_id||null, childId:d.child_id };
+  const questoes = d.questoes||[];
+  const allAnswered = questoes.length>0 && questoes.every(q=>q.userAnswer!==undefined && q.userAnswer!==null);
+  return { id:d.id, subject:d.subject, createdAt:new Date(d.created_at).getTime(), resumo:d.resumo, resumoVersions:d.resumo_versions||[d.resumo], mapa:d.mapa||[], mapaVersions:d.mapa_versions||[d.mapa], mapaImage:d.mapa_image||null, mapaError:null, questoes, examDate:d.exam_date||null, examId:d.exam_id||null, childId:d.child_id, quizChecked: allAnswered, quizScore: allAnswered ? questoes.filter(q=>q.userAnswer===q.correta).length : null };
 }
 async function loadActivitiesFromDb(childId){
   const { data, error } = await db.from('activities').select('*').eq('child_id', childId).order('created_at');
@@ -938,6 +940,8 @@ function renderExamForm(){
 }
 
 function renderActivityResult(a, isCurrent){
+  const child0 = activeChild();
+  const alreadySaved = child0 && (state.activities[child0.id]||[]).some(x=>x.id===a.id);
   let h = `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <h3 style="font-size:16px">${escapeHtml(a.subject)}</h3>
@@ -1009,7 +1013,7 @@ function renderActivityResult(a, isCurrent){
 
     <div class="row no-print" style="margin-top:14px">
       <button class="btn btn-block" id="print-btn">${t('print')}</button>
-      <button class="btn btn-primary btn-block" id="save-activity-btn">${isCurrent?t('save_history'):''}</button>
+      ${(isCurrent && !alreadySaved) ? `<button class="btn btn-primary btn-block" id="save-activity-btn">${t('save_history')}</button>` : (alreadySaved ? `<span style="font-size:12px;color:var(--sub);display:flex;align-items:center;justify-content:center;flex:1">✅ Salvo no histórico</span>` : '')}
     </div>
   </div>`;
   return h;
@@ -1440,7 +1444,7 @@ function compressImage(file){
 
   const checkQuizBtn = document.getElementById('check-quiz-btn');
   if(checkQuizBtn) checkQuizBtn.onclick = async ()=>{
-    const a = state.currentActivity || findOpenHistoryActivity();
+    let a = state.currentActivity || findOpenHistoryActivity();
     let correctCount = 0;
     const wrongQuestions = [];
     a.questoes.forEach(q=>{
@@ -1451,9 +1455,26 @@ function compressImage(file){
     a.quizChecked = true;
     a.quizScore = correctCount;
     render();
+
     const child = activeChild();
+    const alreadySaved = (state.activities[child.id]||[]).some(x=>x.id===a.id);
+    if(!alreadySaved){
+      try{
+        const saved = await insertActivityInDb(child.id, a);
+        saved.quizChecked = true;
+        saved.quizScore = correctCount;
+        state.activities[child.id] = [...(state.activities[child.id]||[]), saved];
+        if(state.currentActivity && state.currentActivity.id === a.id) state.currentActivity = saved;
+        a = saved;
+      }catch(e){
+        window.__toast = 'Corrigido, mas não consegui salvar automaticamente: ' + (e.message||'erro');
+        setTimeout(()=>{window.__toast=null;render();},4500);
+      }
+    }
+
     await insertAttemptInDb(a, child.id, correctCount, wrongQuestions);
     await persistIfSaved(a);
+    render();
   };
 
   const retryQuizBtn = document.getElementById('retry-quiz-btn');
