@@ -85,7 +85,7 @@
   .empty{text-align:center;padding:40px 20px;color:var(--sub)}
   .empty .em{font-size:32px;display:block;margin-bottom:8px}
   .loading{text-align:center;padding:30px;color:var(--sub);font-size:14px}
-  .loading .spin-mascot{width:64px;height:64px;border-radius:50%;object-fit:cover;display:inline-block;animation:spin-book 1.3s ease-in-out infinite;box-shadow:var(--shadow-sm)}
+  .spin-mascot{width:64px;height:64px;border-radius:50%;object-fit:cover;display:inline-block;animation:spin-book 1.3s ease-in-out infinite;box-shadow:var(--shadow-sm)}
   @keyframes spin-book{
     0%{transform:rotateY(0deg)}
     50%{transform:rotateY(180deg)}
@@ -194,10 +194,19 @@ async function loadExamsForChild(childId){
     return data||[];
   }catch(e){ console.warn('loadExams falhou', e); return []; }
 }
-async function insertExamInDb(childId, subject, examDate){
-  const { data, error } = await db.from('exams').insert({ user_id: state.user.id, child_id: childId, subject, exam_date: examDate||null }).select().single();
+async function insertExamInDb(childId, subject, examDate, notes){
+  const { data, error } = await db.from('exams').insert({ user_id: state.user.id, child_id: childId, subject, exam_date: examDate||null, notes: notes||null }).select().single();
   if(error){ console.warn('insertExam', error); throw error; }
   return data;
+}
+async function updateExamInDb(id, subject, examDate, notes){
+  const { data, error } = await db.from('exams').update({ subject, exam_date: examDate||null, notes: notes||null }).eq('id', id).select().single();
+  if(error){ console.warn('updateExam', error); throw error; }
+  return data;
+}
+async function deleteExamInDb(id){
+  const { error } = await db.from('exams').delete().eq('id', id);
+  if(error){ console.warn('deleteExam', error); throw error; }
 }
 async function loadExamScoreSummary(examId){
   try{
@@ -209,6 +218,39 @@ async function loadExamScoreSummary(examId){
     const last = data[data.length-1];
     return { attemptsCount:data.length, avgPct: Math.round((totalCorrect/totalQuestions)*100), lastPct: Math.round((last.correct_count/last.total_questions)*100), lastDate: last.answered_at };
   }catch(e){ console.warn('loadExamScoreSummary falhou', e); return null; }
+}
+
+async function loadChildDashboardData(childId){
+  try{
+    const [examsRes, attemptsRes] = await Promise.all([
+      db.from('exams').select('*').eq('child_id', childId),
+      db.from('attempts').select('*').eq('child_id', childId).not('exam_id','is',null)
+    ]);
+    const exams = examsRes.data || [];
+    const attempts = attemptsRes.data || [];
+    const today = new Date(); today.setHours(0,0,0,0);
+    const upcoming = exams
+      .filter(ex=>ex.exam_date && new Date(ex.exam_date+'T00:00:00') >= today)
+      .sort((a,b)=> new Date(a.exam_date) - new Date(b.exam_date));
+    const nextExam = upcoming[0] || null;
+    let avgPct = null;
+    if(attempts.length){
+      const totalCorrect = attempts.reduce((s,a)=>s+a.correct_count,0);
+      const totalQ = attempts.reduce((s,a)=>s+a.total_questions,0);
+      avgPct = totalQ ? Math.round((totalCorrect/totalQ)*100) : null;
+    }
+    return { examsCount: exams.length, nextExam, avgPct };
+  }catch(e){
+    console.warn('loadChildDashboardData falhou', e);
+    return { examsCount:0, nextExam:null, avgPct:null };
+  }
+}
+async function loadAllChildDashboards(){
+  state.childDashboards = state.childDashboards || {};
+  await Promise.all(state.children.map(async c=>{
+    state.childDashboards[c.id] = await loadChildDashboardData(c.id);
+  }));
+  render();
 }
 
 // ---------- state ----------
@@ -295,6 +337,7 @@ async function loadUserData(){
     state.activities[c.id] = await loadActivitiesFromDb(c.id);
   }
   state.canGenerateImages = await loadMyPermission();
+  loadAllChildDashboards(); // roda em paralelo, não trava o primeiro carregamento
 }
 
 async function loadMyPermission(){
@@ -690,10 +733,25 @@ function renderFilhos(){
       h += renderEditChildForm(c);
       continue;
     }
-    h += `<div class="child-row ${c.id===state.activeChildId?'active':''}" data-select-child="${c.id}">
-      <div class="avatar">${c.prefs[0]?prefEmoji(c.prefs[0]):'🙂'}</div>
-      <div class="child-meta"><strong>${escapeHtml(c.name)}</strong><small>${c.age} anos · ${c.school?escapeHtml(c.school)+' · ':''}${c.prefs.map(prefLabel).join(', ')||'sem preferências'}</small></div>
-      <button class="btn-ghost no-print" data-edit-child="${c.id}" aria-label="Editar" style="padding:4px 8px">✏️</button>
+    const dash = state.childDashboards && state.childDashboards[c.id];
+    let dashHtml = '';
+    if(dash){
+      const parts = [];
+      parts.push(`📅 ${dash.examsCount} prova(s)`);
+      if(dash.avgPct!==null) parts.push(`🎯 ${dash.avgPct}% de média`);
+      if(dash.nextExam){
+        const days = Math.ceil((new Date(dash.nextExam.exam_date+'T00:00:00') - new Date())/86400000);
+        parts.push(`⏳ próxima: ${escapeHtml(dash.nextExam.subject)} em ${days}d`);
+      }
+      dashHtml = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${parts.map(p=>`<span class="badge">${p}</span>`).join('')}</div>`;
+    }
+    h += `<div class="child-row ${c.id===state.activeChildId?'active':''}" data-select-child="${c.id}" style="flex-direction:column;align-items:stretch;gap:0">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="avatar">${c.prefs[0]?prefEmoji(c.prefs[0]):'🙂'}</div>
+        <div class="child-meta"><strong>${escapeHtml(c.name)}</strong><small>${c.age} anos · ${c.school?escapeHtml(c.school)+' · ':''}${c.prefs.map(prefLabel).join(', ')||'sem preferências'}</small></div>
+        <button class="btn-ghost no-print" data-edit-child="${c.id}" aria-label="Editar" style="padding:4px 8px">✏️</button>
+      </div>
+      ${dashHtml}
     </div>`;
   }
 
@@ -806,7 +864,9 @@ function renderEstudar(){
           </div>
           ${summary ? `<span style="font-size:13px;font-weight:700;color:${summary.lastPct>=70?'#1E6B3D':'var(--danger)'}">${summary.lastPct}%</span>` : ''}
         </div>
+        ${ex.notes ? `<p style="font-size:11px;color:var(--ink);background:var(--bg);border-radius:8px;padding:8px 10px;margin:8px 0 0;white-space:pre-line">📝 ${escapeHtml(ex.notes)}</p>` : ''}
         ${summary ? `<p style="font-size:11px;color:var(--sub);margin:8px 0 0">${summary.attemptsCount} tentativa(s) · média geral ${summary.avgPct}%</p>` : `<p style="font-size:11px;color:var(--sub);margin:8px 0 0">Nenhum roteiro respondido ainda.</p>`}
+        <button class="btn-ghost no-print" data-edit-exam="${ex.id}" style="font-size:12px;margin-top:6px;padding:0">✏️ Editar / apagar</button>
       </div>`;
     }
   }
@@ -854,14 +914,18 @@ function renderNewActivityForm(){
 }
 
 function renderExamForm(){
+  const editing = state.editingExamId ? (state.exams||[]).find(e=>e.id===state.editingExamId) : null;
   return `<div class="card">
     <button class="btn-ghost no-print" id="back-to-hub" style="margin-bottom:8px">← Voltar</button>
-    <p class="section-title">📅 Cadastrar prova</p>
+    <p class="section-title">📅 ${editing?'Editar prova':'Cadastrar prova'}</p>
     <label class="field-label">Matéria/assunto</label>
-    <input type="text" id="new-exam-subject" placeholder="Ex: matemática, geografia..." style="margin-bottom:10px">
+    <input type="text" id="new-exam-subject" placeholder="Ex: matemática, geografia..." value="${editing?escapeHtml(editing.subject):''}" style="margin-bottom:10px">
     <label class="field-label">Data da prova (opcional)</label>
-    <input type="date" id="new-exam-date" style="margin-bottom:14px">
-    <button class="btn btn-primary btn-block" id="save-new-exam-btn">Salvar prova</button>
+    <input type="date" id="new-exam-date" value="${editing?(editing.exam_date||''):''}" style="margin-bottom:10px">
+    <label class="field-label">Observações (opcional)</label>
+    <textarea id="new-exam-notes" placeholder="Ex: cai capítulo 3 e 4, páginas 20-35, focar em frações..." style="margin-bottom:14px">${editing?escapeHtml(editing.notes||''):''}</textarea>
+    <button class="btn btn-primary btn-block" id="save-new-exam-btn">${editing?'Salvar alterações':'Salvar prova'}</button>
+    ${editing?`<button class="btn btn-block" id="delete-exam-btn" style="margin-top:8px;color:var(--danger)">🗑️ Apagar prova</button>`:''}
     <p class="err" id="new-exam-err" style="display:none"></p>
   </div>`;
 }
@@ -1011,6 +1075,7 @@ function bindEvents(){
     state.view=b.dataset.tab; state.currentActivity=null; state.error=null; state.showAdmin=false; state.estudarMode=null;
     render();
     if(state.view==='estudar') loadExamsForCurrentChild();
+    if(state.view==='filhos') loadAllChildDashboards();
   });
   document.querySelectorAll('[data-select-child]').forEach(el=>el.onclick=()=>{ state.activeChildId = el.dataset.selectChild; render(); });
 
@@ -1083,6 +1148,8 @@ function bindEvents(){
       state.children.push(child);
       state.activeChildId = child.id;
       state.activities[child.id] = [];
+      state.childDashboards = state.childDashboards || {};
+      state.childDashboards[child.id] = { examsCount:0, nextExam:null, avgPct:null };
       newChildPrefs = new Set();
       state.showAddChild = false;
       render();
@@ -1103,30 +1170,59 @@ function bindEvents(){
   if(hubNewRoteiro) hubNewRoteiro.onclick = ()=>{ state.estudarMode='form'; render(); };
 
   const hubNewExam = document.getElementById('hub-new-exam');
-  if(hubNewExam) hubNewExam.onclick = ()=>{ state.examFormReturnTo='hub'; state.estudarMode='new-exam'; render(); };
+  if(hubNewExam) hubNewExam.onclick = ()=>{ state.examFormReturnTo='hub'; state.editingExamId=null; state.estudarMode='new-exam'; render(); };
 
   const quickNewExamBtn = document.getElementById('quick-new-exam-btn');
-  if(quickNewExamBtn) quickNewExamBtn.onclick = ()=>{ state.examFormReturnTo='form'; state.estudarMode='new-exam'; render(); };
+  if(quickNewExamBtn) quickNewExamBtn.onclick = ()=>{ state.examFormReturnTo='form'; state.editingExamId=null; state.estudarMode='new-exam'; render(); };
 
   const backToHub = document.getElementById('back-to-hub');
-  if(backToHub) backToHub.onclick = ()=>{ state.estudarMode=null; render(); };
+  if(backToHub) backToHub.onclick = ()=>{ state.estudarMode=null; state.editingExamId=null; render(); };
 
   const saveNewExamBtn = document.getElementById('save-new-exam-btn');
   if(saveNewExamBtn) saveNewExamBtn.onclick = async ()=>{
     const subject = document.getElementById('new-exam-subject').value.trim();
     const examDate = document.getElementById('new-exam-date').value || null;
+    const notes = document.getElementById('new-exam-notes').value.trim();
     const errEl = document.getElementById('new-exam-err');
     if(!subject){ errEl.textContent='Digite a matéria/assunto da prova.'; errEl.style.display='block'; return; }
     try{
       const child = activeChild();
-      const newExam = await insertExamInDb(child.id, subject, examDate);
-      state.exams = [...(state.exams||[]), newExam];
-      state.pendingExamSelection = newExam.id;
-      state.estudarMode = state.examFormReturnTo === 'form' ? 'form' : null;
+      if(state.editingExamId){
+        const updated = await updateExamInDb(state.editingExamId, subject, examDate, notes);
+        state.exams = (state.exams||[]).map(ex=>ex.id===updated.id?updated:ex);
+        state.editingExamId = null;
+        state.estudarMode = null;
+      } else {
+        const newExam = await insertExamInDb(child.id, subject, examDate, notes);
+        state.exams = [...(state.exams||[]), newExam];
+        state.pendingExamSelection = newExam.id;
+        state.estudarMode = state.examFormReturnTo === 'form' ? 'form' : null;
+      }
       render();
     }catch(e){
       errEl.textContent = 'Não consegui salvar: ' + (e.message||'erro desconhecido');
       errEl.style.display='block';
+    }
+  };
+
+  document.querySelectorAll('[data-edit-exam]').forEach(b=>b.onclick = ()=>{
+    state.editingExamId = b.dataset.editExam;
+    state.estudarMode = 'new-exam';
+    render();
+  });
+
+  const deleteExamBtn = document.getElementById('delete-exam-btn');
+  if(deleteExamBtn) deleteExamBtn.onclick = async ()=>{
+    if(!confirm('Tem certeza que quer apagar esta prova? Os roteiros de estudo já vinculados continuam existindo, só deixam de estar vinculados a ela.')) return;
+    try{
+      await deleteExamInDb(state.editingExamId);
+      state.exams = (state.exams||[]).filter(ex=>ex.id!==state.editingExamId);
+      state.editingExamId = null;
+      state.estudarMode = null;
+      render();
+    }catch(e){
+      window.__toast = 'Não consegui apagar a prova: ' + (e.message||'erro');
+      setTimeout(()=>{window.__toast=null;render();},4000);
     }
   };
 
