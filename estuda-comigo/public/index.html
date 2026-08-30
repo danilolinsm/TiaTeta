@@ -444,9 +444,13 @@ function render(){
   }
   let html = mascotHeader(true);
   html += `<div class="view">`;
-  if(state.view==='filhos') html += renderFilhos();
-  if(state.view==='estudar') html += renderEstudar();
-  if(state.view==='historico') html += renderHistorico();
+  if(state.showAdmin){
+    html += renderAdminArea();
+  } else {
+    if(state.view==='filhos') html += renderFilhos();
+    if(state.view==='estudar') html += renderEstudar();
+    if(state.view==='historico') html += renderHistorico();
+  }
   html += `</div>`;
   html += `<nav class="tabs no-print">
     <button data-tab="filhos" class="${state.view==='filhos'?'active':''}">${iconSvg('filhos')}${tk('tab_filhos')}</button>
@@ -457,6 +461,7 @@ function render(){
   if(window.__toast) html += `<div class="no-print" style="position:fixed;bottom:76px;left:12px;right:12px;max-width:456px;margin:0 auto;background:var(--ink);color:#fff;font-size:12px;padding:10px 14px;border-radius:10px;z-index:30">${window.__toast}</div>`;
   app.innerHTML = html;
   bindEvents();
+  bindAdminEvents();
   bindLangToggle();
   const logoutBtn = document.getElementById('logout-btn');
   if(logoutBtn) logoutBtn.onclick = async ()=>{ await db.auth.signOut(); };
@@ -779,7 +784,7 @@ function renderFilePreview(){
 }
 
 function bindEvents(){
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = ()=>{ state.view=b.dataset.tab; state.currentActivity=null; state.error=null; render(); });
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = ()=>{ state.view=b.dataset.tab; state.currentActivity=null; state.error=null; state.showAdmin=false; render(); });
   document.querySelectorAll('[data-select-child]').forEach(el=>el.onclick=()=>{ state.activeChildId = el.dataset.selectChild; render(); });
 
   document.querySelectorAll('[data-edit-child]').forEach(el=>el.onclick=(ev)=>{ ev.stopPropagation(); state.editingChildId = el.dataset.editChild; editChildPrefs = new Set((state.children.find(c=>c.id===state.editingChildId)||{prefs:[]}).prefs); render(); });
@@ -1080,10 +1085,13 @@ function openAccountModal(){
     <p id="acc-ok" style="display:none;color:var(--teal);font-size:13px;margin-top:8px">${isEn?'Saved!':'Salvo!'}</p>
 
     <button class="btn btn-block" id="modal-cancel" style="margin-top:16px">${isEn?'Close':'Fechar'}</button>
+    <button class="btn-ghost" id="acc-admin-btn" style="margin-top:10px;font-size:12px">🛠️ ${isEn?'Admin area':'Área do administrador'}</button>
   </div></div>`;
   render();
 
   document.getElementById('modal-cancel').onclick = ()=>{ window.__modal=null; render(); };
+
+  document.getElementById('acc-admin-btn').onclick = ()=>{ window.__modal=null; openAdminArea(); };
 
   document.getElementById('acc-role-student').onclick = ()=> switchRole('student');
   document.getElementById('acc-role-parent').onclick = ()=> switchRole('parent');
@@ -1120,6 +1128,69 @@ function openAccountModal(){
       okEl.style.display='block';
     }catch(e){ errEl.textContent = e.message; errEl.style.display='block'; }
   };
+}
+
+async function openAdminArea(){
+  state.showAdmin = true;
+  state.adminLoading = true; state.adminError = null; state.adminUsers = null;
+  render();
+  try{
+    const res = await fetch('/api/admin-users', {
+      headers: { Authorization: `Bearer ${state.session.access_token}` }
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    state.adminUsers = data.users;
+  }catch(e){
+    state.adminError = e.message || 'Erro ao carregar usuários';
+  }
+  state.adminLoading = false;
+  render();
+}
+
+function renderAdminArea(){
+  let h = `<button class="btn-ghost no-print" id="admin-back" style="margin-bottom:10px">← Voltar</button>`;
+  h += `<h2 style="font-size:17px;margin-bottom:12px">🛠️ Área do administrador</h2>`;
+  if(state.adminLoading){
+    h += `<div class="loading"><span class="spin-book">📖</span><br>Carregando usuários...</div>`;
+    return h;
+  }
+  if(state.adminError){
+    h += `<div class="card"><p class="err" style="display:block">${escapeHtml(state.adminError)}</p></div>`;
+    return h;
+  }
+  const users = state.adminUsers || [];
+  h += `<p style="font-size:12px;color:var(--sub);margin-bottom:12px">${users.length} usuário(s) cadastrado(s)</p>`;
+  for(const u of users){
+    const created = u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '—';
+    const lastLogin = u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString('pt-BR') : 'nunca entrou';
+    const confirmed = u.email_confirmed_at ? '✅ email confirmado' : '⚠️ email não confirmado';
+    h += `<div class="card" style="padding:14px">
+      <p style="font-size:13px;font-weight:500;margin:0">${escapeHtml(u.full_name || u.email)}</p>
+      <p style="font-size:12px;color:var(--sub);margin:2px 0 0">${escapeHtml(u.email)}</p>
+      <p style="font-size:11px;color:var(--sub);margin:6px 0 0">Cadastrado em ${created} · Último acesso: ${lastLogin}</p>
+      <p style="font-size:11px;color:var(--sub);margin:2px 0 10px">${confirmed}${u.role?` · perfil: ${u.role==='student'?'estudante':'pai/mãe'}`:''}</p>
+      <button class="btn" data-reset-email="${escapeHtml(u.email)}" style="font-size:12px">Enviar redefinição de senha</button>
+    </div>`;
+  }
+  return h;
+}
+
+function bindAdminEvents(){
+  const backBtn = document.getElementById('admin-back');
+  if(backBtn) backBtn.onclick = ()=>{ state.showAdmin = false; render(); };
+  document.querySelectorAll('[data-reset-email]').forEach(b=>b.onclick = async ()=>{
+    const email = b.dataset.resetEmail;
+    b.disabled = true; b.textContent = 'Enviando...';
+    try{
+      const { error } = await db.auth.resetPasswordForEmail(email);
+      if(error) throw error;
+      b.textContent = 'Email enviado ✓';
+    }catch(e){
+      b.textContent = 'Erro ao enviar';
+      console.warn(e);
+    }
+  });
 }
 
 function openReportModal(part){
