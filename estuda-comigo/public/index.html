@@ -363,10 +363,10 @@ async function loadMyPermission(){
 function activeChild(){ return state.children.find(c=>c.id===state.activeChildId); }
 
 // ---------- AI calls ----------
-async function callClaude(promptText, files){
+async function callClaude(promptText, files, kind){
   const res = await fetch('/api/claude', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ prompt: promptText, images: (files||[]).map(f=>({base64:f.base64, mediaType:f.mediaType, isPdf:f.isPdf})) })
+    method:'POST', headers:{'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}`},
+    body: JSON.stringify({ prompt: promptText, images: (files||[]).map(f=>({base64:f.base64, mediaType:f.mediaType, isPdf:f.isPdf})), kind })
   });
   if(res.status === 413){
     throw new Error('Os arquivos anexados são grandes demais para enviar de uma vez. Tente com menos fotos ou remova o PDF.');
@@ -401,7 +401,7 @@ function ageBand(age){
 
 async function callNanoBanana(promptText, signal){
   const res = await fetch('/api/image', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}`},
     body: JSON.stringify({ prompt: promptText }),
     signal
   });
@@ -487,7 +487,7 @@ Gere um JSON (APENAS o JSON, sem texto antes ou depois, sem markdown) no seguint
   "mapa": [{"label":"nome curto do conceito (max 4 palavras)","emoji":"um emoji que combine com o conceito, se possível relacionado a ${prefsText||'algo lúdico'}"}, ... 4 a 6 itens],
   "questoes": [{"pergunta":"...", "opcoes":["a","b","c","d"], "correta":0}, ... exatamente ${count} itens]
 }`;
-  return await callClaude(prompt, files);
+  return await callClaude(prompt, files, 'roteiro');
 }
 
 async function regenerateWithFeedback(part, activity, feedback){
@@ -516,7 +516,7 @@ Alternativas: ${question.opcoes.map((o,i)=>`${String.fromCharCode(97+i)}) ${o}`)
 Dê APENAS uma dica curta (1-2 frases) que ajude a criança a pensar no caminho certo, do jeito socrático: faça uma pergunta ou aponte um detalhe importante, mas NUNCA diga qual é a alternativa correta nem entregue a resposta.
 Responda em texto simples, sem JSON, sem markdown — só a dica.`;
   const res = await fetch('/api/claude', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}`},
     body: JSON.stringify({ prompt, images: [] })
   });
   const data = await res.json();
@@ -531,7 +531,7 @@ ${wrongTexts.map((w,i)=>`${i+1}. ${w}`).join('\n')}
 Gere ${count} questões NOVAS de múltipla escolha (4 alternativas cada) sobre o(s) MESMO(S) conceito(s) dessas questões que ela errou — mesma dificuldade, mas com números/situações diferentes, pra ela praticar de novo até fixar.
 Responda APENAS um JSON, sem markdown: {"questoes":[{"pergunta":"...","opcoes":["a","b","c","d"],"correta":0}, ...]}`;
   const res = await fetch('/api/claude', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}`},
     body: JSON.stringify({ prompt, images: [] })
   });
   const data = await res.json();
@@ -1531,6 +1531,7 @@ function compressImage(file){
     }
   }
 
+  const printBtn = document.getElementById('print-btn');
   if(printBtn) printBtn.onclick = ()=> window.print();
 
   const saveBtn = document.getElementById('save-activity-btn');
@@ -1677,6 +1678,24 @@ async function toggleUserImagePermission(userId, value){
   }
   render();
 }
+async function toggleUserUnlimited(userId, value){
+  try{
+    const res = await fetch('/api/admin-permissions', {
+      method:'POST',
+      headers: { 'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}` },
+      body: JSON.stringify({ action:'toggle', user_id:userId, value, field:'unlimited' })
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    const idx = state.adminPermissions.findIndex(p=>p.user_id===userId);
+    if(idx>-1) state.adminPermissions[idx].unlimited = value;
+    else state.adminPermissions.push({ user_id:userId, unlimited:value });
+  }catch(e){
+    window.__toast = 'Não consegui salvar a permissão: ' + (e.message||'erro');
+    setTimeout(()=>{window.__toast=null;render();},4000);
+  }
+  render();
+}
 
 function renderAdminArea(){
   let h = `<button class="btn-ghost no-print" id="admin-back" style="margin-bottom:10px">← Voltar</button>`;
@@ -1710,6 +1729,7 @@ function renderAdminArea(){
     const confirmed = u.email_confirmed_at ? '✅ email confirmado' : '⚠️ email não confirmado';
     const perm = perms.find(p=>p.user_id===u.id);
     const canImg = !!(perm && perm.can_generate_images);
+    const semLimite = !!(perm && perm.unlimited);
     h += `<div class="card" style="padding:14px">
       <p style="font-size:13px;font-weight:500;margin:0">${escapeHtml(u.full_name || u.email)}</p>
       <p style="font-size:12px;color:var(--sub);margin:2px 0 0">${escapeHtml(u.email)}</p>
@@ -1718,6 +1738,10 @@ function renderAdminArea(){
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--bg);border-radius:8px;margin-bottom:10px">
         <span style="font-size:12px">🎨 Pode gerar imagens</span>
         <button data-toggle-img="${u.id}" data-current="${canImg?'1':'0'}" class="toggle-switch ${canImg?'on':''}" role="switch" aria-checked="${canImg}"><span></span></button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--bg);border-radius:8px;margin-bottom:10px">
+        <span style="font-size:12px">🚀 Sem limite de uso (roteiros/imagens)</span>
+        <button data-toggle-unlimited="${u.id}" data-current="${semLimite?'1':'0'}" class="toggle-switch ${semLimite?'on':''}" role="switch" aria-checked="${semLimite}"><span></span></button>
       </div>
       <button class="btn" data-reset-email="${escapeHtml(u.email)}" style="font-size:12px">Enviar redefinição de senha</button>
     </div>`;
@@ -1745,6 +1769,12 @@ function bindAdminEvents(){
     const userId = b.dataset.toggleImg;
     const newVal = b.dataset.current !== '1';
     toggleUserImagePermission(userId, newVal);
+  });
+
+  document.querySelectorAll('[data-toggle-unlimited]').forEach(b=>b.onclick = ()=>{
+    const userId = b.dataset.toggleUnlimited;
+    const newVal = b.dataset.current !== '1';
+    toggleUserUnlimited(userId, newVal);
   });
 
   document.querySelectorAll('[data-approve-request]').forEach(b=>b.onclick = async ()=>{
