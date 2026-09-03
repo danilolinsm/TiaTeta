@@ -2,5 +2,11 @@
   "name": "tia-teta",
   "version": "1.0.0",
   "private": true,
-  "description": "App de apoio aos estudos para mães (resumo, mapa mental ilustrado e simulado gerados por IA)"
+  "description": "App de apoio aos estudos para mães (resumo, mapa mental ilustrado e simulado gerados por IA)",
+  "scripts": {
+    "lint": "find . -name \"*.js\" -not -path \"./node_modules/*\" -print0 | xargs -0 -n1 node --check && echo 'lint ok: sintaxe valida em todos os .js'",
+    "typecheck": "echo 'sem TypeScript no projeto ainda - typecheck nao se aplica' && exit 0",
+    "test": "echo 'sem suite de testes automatizados ainda - pendencia tecnica registrada' && exit 0",
+    "build": "node -e \"require('fs').accessSync('public/index.html'); console.log('build ok: index.html presente, app estatico sem bundler')\""
+  }
 }
