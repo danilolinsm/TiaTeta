@@ -1,11 +1,25 @@
 // Gera o pôster ilustrado (mapa mental) usando o Gemini Pro Image (Nano Banana Pro).
 // A chave nunca é exposta ao navegador — fica só na variável de ambiente GEMINI_API_KEY.
+const { getAuthenticatedUser, getUsage, incrementUsage, LIMITE_IMAGENS } = require('../lib/usage');
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
   try {
+    const me = await getAuthenticatedUser(req);
+    if (!me) {
+      res.status(401).json({ error: 'Não autenticado' });
+      return;
+    }
+
+    const uso = await getUsage(me.id);
+    if (uso.imagens_count >= LIMITE_IMAGENS) {
+      res.status(429).json({ error: `Vocês atingiram o limite de ${LIMITE_IMAGENS} imagens este mês. O limite renova no início do próximo mês.` });
+      return;
+    }
+
     const { prompt } = req.body || {};
     if (!prompt) {
       res.status(400).json({ error: 'prompt é obrigatório' });
@@ -30,6 +44,9 @@ module.exports = async function handler(req, res) {
       res.status(500).json({ error: 'Nenhuma imagem retornada pela API.' });
       return;
     }
+
+    await incrementUsage(me.id, 'imagens_count');
+
     res.status(200).json({ dataUrl: `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}` });
   } catch (e) {
     res.status(500).json({ error: e.message });
