@@ -164,6 +164,10 @@ async function updateActivityInDb(a){
   }).eq('id', a.id);
   if(error) console.warn('updateActivity', error);
 }
+async function deleteActivityInDb(id){
+  const { error } = await db.from('activities').delete().eq('id', id);
+  if(error){ console.warn('deleteActivity', error); throw error; }
+}
 async function persistIfSaved(a){
   const child = activeChild();
   if(!child) return;
@@ -1013,7 +1017,7 @@ function renderActivityResult(a, isCurrent){
 
     <div class="row no-print" style="margin-top:14px">
       <button class="btn btn-block" id="print-btn">${t('print')}</button>
-      ${(isCurrent && !alreadySaved) ? `<button class="btn btn-primary btn-block" id="save-activity-btn">${t('save_history')}</button>` : (alreadySaved ? `<span style="font-size:12px;color:var(--sub);display:flex;align-items:center;justify-content:center;flex:1">✅ Salvo no histórico</span>` : '')}
+      ${(isCurrent && !alreadySaved) ? `<button class="btn btn-primary btn-block" id="save-activity-btn">${t('save_history')}</button>` : (alreadySaved ? `<button class="btn btn-block" id="delete-activity-btn" data-activity-id="${a.id}" style="color:var(--danger)">🗑️ Apagar</button>` : '')}
     </div>
   </div>`;
   return h;
@@ -1534,9 +1538,9 @@ function compressImage(file){
   const printBtn = document.getElementById('print-btn');
   if(printBtn) printBtn.onclick = ()=> window.print();
 
-    const saveBtn = document.getElementById('save-activity-btn');
+  const saveBtn = document.getElementById('save-activity-btn');
   if(saveBtn) saveBtn.onclick = async ()=>{
-    if(saveBtn.disabled) return; // trava contra clique duplo
+    if(saveBtn.disabled) return;
     saveBtn.disabled = true;
     saveBtn.innerHTML = `<img src="/mascot.jpg" alt="" class="spin-mascot" style="width:20px;height:20px;vertical-align:-5px;margin-right:6px">Salvando...`;
     const child = activeChild();
@@ -1553,6 +1557,28 @@ function compressImage(file){
       saveBtn.disabled = false;
       saveBtn.textContent = t('save_history');
       window.__toast = 'Não consegui salvar no histórico: ' + (e.message||'erro desconhecido');
+      setTimeout(()=>{window.__toast=null;render();},4500);
+      render();
+    }
+  };
+
+  const deleteActBtn = document.getElementById('delete-activity-btn');
+  if(deleteActBtn) deleteActBtn.onclick = async ()=>{
+    if(!confirm('Tem certeza que quer apagar este roteiro do histórico? Essa ação não pode ser desfeita.')) return;
+    const activityId = deleteActBtn.dataset.activityId;
+    deleteActBtn.disabled = true;
+    deleteActBtn.innerHTML = `<img src="/mascot.jpg" alt="" class="spin-mascot" style="width:20px;height:20px;vertical-align:-5px;margin-right:6px">Apagando...`;
+    try{
+      await deleteActivityInDb(activityId);
+      const child = activeChild();
+      state.activities[child.id] = (state.activities[child.id]||[]).filter(x=>x.id!==activityId);
+      state.openHistoryId = null;
+      state.currentActivity = null;
+      render();
+    }catch(e){
+      deleteActBtn.disabled = false;
+      deleteActBtn.textContent = '🗑️ Apagar';
+      window.__toast = 'Não consegui apagar: ' + (e.message||'erro desconhecido');
       setTimeout(()=>{window.__toast=null;render();},4500);
       render();
     }
