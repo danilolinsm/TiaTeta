@@ -49,19 +49,19 @@ module.exports = async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { action, user_id, value, request_id } = req.body || {};
+      const { action, user_id, value, request_id, field } = req.body || {};
 
-      if (action === 'toggle') {
+            if (action === 'toggle') {
+        const campo = field === 'unlimited' ? 'unlimited' : 'can_generate_images';
         const r = await fetch(`${SUPABASE_URL}/rest/v1/permissions`, {
           method: 'POST',
           headers: { ...svcHeaders, Prefer: 'resolution=merge-duplicates,return=representation' },
-          body: JSON.stringify({ user_id, can_generate_images: !!value, updated_at: new Date().toISOString() })
+          body: JSON.stringify({ user_id, [campo]: !!value, updated_at: new Date().toISOString() })
         });
         if (!r.ok) { res.status(500).json({ error: await r.text() }); return; }
         res.status(200).json({ ok: true });
         return;
       }
-
       if (action === 'resolve_request') {
         const r = await fetch(`${SUPABASE_URL}/rest/v1/access_requests?id=eq.${request_id}`, {
           method: 'PATCH',
