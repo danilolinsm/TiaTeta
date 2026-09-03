@@ -1,0 +1,8 @@
+node_modules/
+.env
+agentes/qa-release/.env
+screenshots/
+playwright-report/
+test-results/
+preflight.json
+.last-qa-commit
