@@ -1534,8 +1534,11 @@ function compressImage(file){
   const printBtn = document.getElementById('print-btn');
   if(printBtn) printBtn.onclick = ()=> window.print();
 
-  const saveBtn = document.getElementById('save-activity-btn');
+    const saveBtn = document.getElementById('save-activity-btn');
   if(saveBtn) saveBtn.onclick = async ()=>{
+    if(saveBtn.disabled) return; // trava contra clique duplo
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<img src="/mascot.jpg" alt="" class="spin-mascot" style="width:20px;height:20px;vertical-align:-5px;margin-right:6px">Salvando...`;
     const child = activeChild();
     try{
       const saved = await insertActivityInDb(child.id, state.currentActivity);
@@ -1547,6 +1550,8 @@ function compressImage(file){
       render();
       setTimeout(()=>{ state.celebrate=false; render(); }, 3200);
     }catch(e){
+      saveBtn.disabled = false;
+      saveBtn.textContent = t('save_history');
       window.__toast = 'Não consegui salvar no histórico: ' + (e.message||'erro desconhecido');
       setTimeout(()=>{window.__toast=null;render();},4500);
       render();
