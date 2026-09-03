@@ -1,0 +1,5 @@
+claude-agent-sdk>=0.1.0
+
+# A API do SDK muda com frequência. Antes do dia 4, confira a versão atual
+# e a assinatura de ClaudeAgentOptions em https://docs.claude.com — o codigo
+# de agent.py foi escrito contra a versao documentada em setembro de 2026.

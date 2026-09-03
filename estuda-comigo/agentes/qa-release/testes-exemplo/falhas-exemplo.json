@@ -1,0 +1,32 @@
+[
+  {
+    "nome": "calcula_pontuacao_tri_deve_retornar_numero_positivo",
+    "arquivo": "src/tri/calculo.test.ts",
+    "erro": "expected 245.3 to be greater than 0, received -12.1",
+    "flaky_historico": false
+  },
+  {
+    "nome": "lista_questoes_matematica_carrega_do_cache",
+    "arquivo": "src/questoes/cache.test.ts",
+    "erro": "timeout of 5000ms exceeded esperando resposta do IndexedDB mock",
+    "flaky_historico": true
+  },
+  {
+    "nome": "onboarding_mostra_tela_de_boas_vindas",
+    "arquivo": "src/onboarding/fluxo.test.ts",
+    "erro": "unable to find element with text 'Bem-vindo' — o texto atual no componente é 'Bem-vinda'",
+    "flaky_historico": false
+  },
+  {
+    "nome": "taxonomia_matematica_tem_todos_os_topicos_do_edital",
+    "arquivo": "src/taxonomia/cobertura.test.ts",
+    "erro": "expected array length 47, received 46 — falta 'Progressao geometrica'",
+    "flaky_historico": false
+  },
+  {
+    "nome": "sincronizacao_offline_resolve_conflito",
+    "arquivo": "src/sync/offline.test.ts",
+    "erro": "AssertionError: mock de rede retornou 503 de forma inconsistente entre execucoes",
+    "flaky_historico": true
+  }
+]

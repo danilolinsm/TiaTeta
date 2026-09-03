@@ -1,0 +1,118 @@
+name: QA e release
+
+on:
+  schedule:
+    # 01:00 UTC = 04:00 no fuso local (UTC+3), segunda a sexta.
+    # O horario e por conveniencia: o preco por token nao varia com a hora.
+    - cron: "0 1 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: qa-release
+  cancel-in-progress: false
+
+jobs:
+  # Fase 0. Determinística, custo zero, sem aprovacao.
+  # Se o build quebrar aqui, nenhum token e gasto.
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      mudou: ${{ steps.diff.outputs.mudou }}
+      build_ok: ${{ steps.check.outputs.build_ok }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Nada mudou desde a ultima execucao?
+        id: diff
+        run: |
+          ATUAL=$(git rev-parse HEAD)
+          ANTERIOR=$(cat .last-qa-commit 2>/dev/null || echo "")
+          if [ "$ATUAL" = "$ANTERIOR" ]; then
+            echo "mudou=false" >> $GITHUB_OUTPUT
+          else
+            echo "mudou=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Pre-voo
+        id: check
+        if: steps.diff.outputs.mudou == 'true'
+        run: |
+          bash agentes/qa-release/preflight.sh && CODIGO=0 || CODIGO=$?
+          if [ "$CODIGO" -eq 2 ]; then
+            echo "build_ok=false" >> $GITHUB_OUTPUT
+          else
+            echo "build_ok=true" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: steps.diff.outputs.mudou == 'true'
+        with:
+          name: preflight
+          path: preflight.json
+          retention-days: 7
+
+      - name: Avisar build quebrado
+        if: steps.check.outputs.build_ok == 'false'
+        run: |
+          gh issue create \
+            --title "Build quebrado — nenhum token gasto" \
+            --body "$(jq -r '.etapas[] | select(.codigo != 0) | .saida' preflight.json | head -c 4000)" \
+            --label "release-blocker"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Fases pagas. Travam esperando sua aprovacao.
+  # O environment "agente-llm" precisa ter voce como required reviewer
+  # em Settings > Environments, com wait timer de 6 horas.
+  analise:
+    needs: preflight
+    if: needs.preflight.outputs.mudou == 'true' && needs.preflight.outputs.build_ok == 'true'
+    runs-on: ubuntu-latest
+    environment: agente-llm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r agentes/qa-release/requirements.txt
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: preflight
+
+      - name: Rodar agente
+        run: python agentes/qa-release/agent.py
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Teto rigido. Estourou, aborta e registra na issue.
+          QA_TETO_USD: "2.00"
+          # Batch corta 50%. Ligue depois do dia 10 do plano.
+          QA_USAR_BATCH: "false"
+
+      - name: Registrar custo
+        if: always()
+        run: |
+          cat custo.log >> docs/agentes/CUSTOS.md
+          git config user.name "agente-qa"
+          git config user.email "agente@tia-teta.local"
+          git add docs/agentes/CUSTOS.md .last-qa-commit
+          git commit -m "chore: registro de custo da execucao" || true
+          git push
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: release-package/
+          retention-days: 30

@@ -1,0 +1,60 @@
+{
+  "_instrucoes": "Preencha todo campo abaixo antes do dia 2 terminar. Deixe null apenas o que genuinamente não decidiu ainda — o agente vai reclamar de campo vazio na Fase 2, e é melhor reclamar aqui do que na revisão da loja.",
+
+  "app": {
+    "nome": "Tia Teta",
+    "bundle_id_ios": null,
+    "package_name_android": null,
+    "url_privacidade": null,
+    "url_suporte": null,
+    "email_suporte": null,
+    "publico_alvo": "estudantes de ensino médio se preparando para o ENEM, majoritariamente 15-18 anos"
+  },
+
+  "app_store": {
+    "subtitulo": null,
+    "descricao_promocional": null,
+    "descricao_completa": null,
+    "palavras_chave": [],
+    "categoria_primaria": "Educação",
+    "categoria_secundaria": null,
+    "classificacao_etaria_calculada": null,
+    "made_for_kids": false,
+    "_nota_made_for_kids": "Se marcar Made for Kids, não dá pra desmarcar depois de aprovado. Como o público real é 15-18 anos, o normal é NÃO marcar — mas decida isso conscientemente, não por omissão.",
+    "changelog": null
+  },
+
+  "play_store": {
+    "titulo": null,
+    "descricao_curta": null,
+    "descricao_completa": null,
+    "categoria": "Educação",
+    "classificacao_conteudo_iarc": null,
+    "changelog": null,
+    "data_safety": {
+      "_nota": "Cada item abaixo precisa bater exatamente com o que o app realmente coleta. Divergência entre isso, a política de privacidade e o comportamento real do binário é o motivo mais comum de flag na revisão.",
+      "coleta_email": null,
+      "coleta_nome": null,
+      "coleta_identificadores_dispositivo": null,
+      "coleta_dados_uso": null,
+      "compartilha_com_terceiros": null,
+      "terceiros_listados": [],
+      "permite_exclusao_de_conta": null,
+      "dados_criptografados_em_transito": null
+    }
+  },
+
+  "screenshots": {
+    "ios": {
+      "6.9": [],
+      "6.5": [],
+      "5.5": []
+    },
+    "android": {
+      "phone": [],
+      "tablet_7": [],
+      "tablet_10": []
+    },
+    "_nota": "Tamanhos exigidos mudam com frequência — confira App Store Connect e Play Console no dia da submissão antes de gerar os assets finais."
+  }
+}
