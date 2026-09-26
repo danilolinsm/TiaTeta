@@ -1,4 +1,6 @@
 -- Rode este script inteiro no Supabase: menu lateral "SQL Editor" → "New query" → cole tudo → "Run"
+-- Idempotente: pode rodar de novo sem erro. Tabelas usam IF NOT EXISTS e cada policy só é criada
+-- se ainda não existir (nunca DROP + CREATE, para não recriar as policies de produção).
 
 create table if not exists children (
   id uuid primary key default gen_random_uuid(),
@@ -28,16 +30,26 @@ alter table children enable row level security;
 alter table activities enable row level security;
 
 -- Cada mãe só consegue ver/criar/editar/apagar os próprios filhos
-create policy "children: only own rows" on children
-  for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'children' and policyname = 'children: only own rows') then
+    create policy "children: only own rows" on children
+      for all
+      using (auth.uid() = user_id)
+      with check (auth.uid() = user_id);
+  end if;
+end $$;
 
 -- Cada mãe só consegue ver/criar/editar/apagar as próprias atividades
-create policy "activities: only own rows" on activities
-  for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'activities' and policyname = 'activities: only own rows') then
+    create policy "activities: only own rows" on activities
+      for all
+      using (auth.uid() = user_id)
+      with check (auth.uid() = user_id);
+  end if;
+end $$;
 
 -- ===================================================================
 -- Permissão para gerar imagens (pôster e ilustração das questões)
@@ -52,8 +64,13 @@ create table if not exists permissions (
 alter table permissions enable row level security;
 
 -- Cada usuário só pode LER a própria permissão (não pode alterar a própria!)
-create policy "permissions: self read only" on permissions
-  for select using (auth.uid() = user_id);
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'permissions' and policyname = 'permissions: self read only') then
+    create policy "permissions: self read only" on permissions
+      for select using (auth.uid() = user_id);
+  end if;
+end $$;
 -- Sem policy de insert/update/delete para usuários comuns —
 -- só o backend com a service_role key consegue escrever aqui.
 
@@ -70,9 +87,19 @@ create table if not exists access_requests (
 alter table access_requests enable row level security;
 
 -- Cada usuário pode criar e ver os próprios pedidos
-create policy "access_requests: self insert" on access_requests
-  for insert with check (auth.uid() = user_id);
-create policy "access_requests: self read own" on access_requests
-  for select using (auth.uid() = user_id);
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'access_requests' and policyname = 'access_requests: self insert') then
+    create policy "access_requests: self insert" on access_requests
+      for insert with check (auth.uid() = user_id);
+  end if;
+end $$;
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'access_requests' and policyname = 'access_requests: self read own') then
+    create policy "access_requests: self read own" on access_requests
+      for select using (auth.uid() = user_id);
+  end if;
+end $$;
 -- Aprovar/negar (update) só pelo backend com a service_role key.
 
