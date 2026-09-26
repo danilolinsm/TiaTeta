@@ -1,8 +1,17 @@
 node_modules/
+# variáveis de ambiente: nunca commitar (só os exemplos)
 .env
+.env.*
+.env.local
+*.env.local
+!.env.example
+!**/.env.example
 agentes/qa-release/.env
+# Vercel CLI (vercel link / vercel dev)
+.vercel/
 screenshots/
 playwright-report/
 test-results/
 preflight.json
+# .last-qa-commit é gerado pelo agente de QA; o workflow faz `git add -f` quando precisa versioná-lo
 .last-qa-commit

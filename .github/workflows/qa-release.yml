@@ -1,5 +1,22 @@
 name: QA e release
 
+# Movido de estuda-comigo/.github/workflows/ para a raiz: o GitHub só lê workflows em
+# .github/workflows/ na raiz do repo. Todo o app fica em estuda-comigo/, então os passos
+# `run:` rodam lá (defaults.run.working-directory) e os caminhos de `uses:` apontam para lá.
+#
+# Nenhum segredo fica neste arquivo. Configure em Settings > Secrets and variables > Actions:
+#   Secrets:
+#     ANTHROPIC_API_KEY  — usado só no job pago "analise" (agente de QA)
+#     QA_TEST_EMAIL      — conta de teste de QA (login no Playwright dos screenshots)
+#     QA_TEST_PASSWORD   — senha dessa conta de teste
+#   Variables:
+#     QA_BASE_URL        — URL onde o app roda (ex.: preview/produção da Vercel); sem ela o
+#                          Playwright tenta http://localhost:3000, que não existe no runner
+#     QA_AGENTE_LLM_ATIVO — "true" para liberar o job pago; qualquer outro valor = desligado
+#   GITHUB_TOKEN é automático (não precisa cadastrar).
+# Também é preciso: environment "agente-llm" com você como required reviewer (Settings >
+# Environments) e as labels "release-blocker" e "release-candidate" criadas no repo.
+
 on:
   schedule:
     # 01:00 UTC = 04:00 no fuso local (UTC+3), segunda a sexta.
@@ -11,11 +28,21 @@ concurrency:
   group: qa-release
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: estuda-comigo
+
 jobs:
   # Fase 0. Determinística, custo zero, sem aprovacao.
   # Se o build quebrar aqui, nenhum token e gasto.
   preflight:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     outputs:
       mudou: ${{ steps.diff.outputs.mudou }}
       build_ok: ${{ steps.check.outputs.build_ok }}
@@ -28,6 +55,7 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+          cache-dependency-path: estuda-comigo/package-lock.json
 
       - run: npm ci
 
@@ -45,7 +73,12 @@ jobs:
       - name: Pre-voo
         id: check
         if: steps.diff.outputs.mudou == 'true'
+        env:
+          QA_BASE_URL: ${{ vars.QA_BASE_URL }}
+          QA_TEST_EMAIL: ${{ secrets.QA_TEST_EMAIL }}
+          QA_TEST_PASSWORD: ${{ secrets.QA_TEST_PASSWORD }}
         run: |
+          npx playwright install --with-deps chromium
           bash agentes/qa-release/preflight.sh && CODIGO=0 || CODIGO=$?
           if [ "$CODIGO" -eq 2 ]; then
             echo "build_ok=false" >> $GITHUB_OUTPUT
@@ -57,7 +90,7 @@ jobs:
         if: steps.diff.outputs.mudou == 'true'
         with:
           name: preflight
-          path: preflight.json
+          path: estuda-comigo/preflight.json
           retention-days: 7
 
       - name: Avisar build quebrado
@@ -73,11 +106,17 @@ jobs:
   # Fases pagas. Travam esperando sua aprovacao.
   # O environment "agente-llm" precisa ter voce como required reviewer
   # em Settings > Environments, com wait timer de 6 horas.
+  # Trava extra: só roda com a variável QA_AGENTE_LLM_ATIVO = "true". Se o environment
+  # ainda não existir, o GitHub o cria SEM proteção na primeira execução — por isso o job
+  # fica desligado por padrão até você configurar tudo.
   analise:
     needs: preflight
-    if: needs.preflight.outputs.mudou == 'true' && needs.preflight.outputs.build_ok == 'true'
+    if: needs.preflight.outputs.mudou == 'true' && needs.preflight.outputs.build_ok == 'true' && vars.QA_AGENTE_LLM_ATIVO == 'true'
     runs-on: ubuntu-latest
     environment: agente-llm
+    permissions:
+      contents: write   # commit do registro de custo
+      issues: write     # agent.py abre issue
     steps:
       - uses: actions/checkout@v4
 
@@ -90,6 +129,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: preflight
+          path: estuda-comigo
 
       - name: Rodar agente
         run: python agentes/qa-release/agent.py
@@ -104,15 +144,18 @@ jobs:
       - name: Registrar custo
         if: always()
         run: |
-          cat custo.log >> docs/agentes/CUSTOS.md
+          mkdir -p docs/agentes
+          [ -f custo.log ] && cat custo.log >> docs/agentes/CUSTOS.md
           git config user.name "agente-qa"
           git config user.email "agente@tia-teta.local"
-          git add docs/agentes/CUSTOS.md .last-qa-commit
+          # .last-qa-commit está no .gitignore, mas precisa ir para o repo (o job "preflight" lê dele)
+          git add docs/agentes/CUSTOS.md
+          [ -f .last-qa-commit ] && git add -f .last-qa-commit
           git commit -m "chore: registro de custo da execucao" || true
           git push
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-package
-          path: release-package/
+          path: estuda-comigo/release-package/
           retention-days: 30
