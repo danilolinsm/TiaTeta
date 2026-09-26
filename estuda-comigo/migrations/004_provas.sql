@@ -1,4 +1,5 @@
 -- Rode isso no SQL Editor do Supabase (New query → cole tudo → Run).
+-- Idempotente: a policy só é criada se ainda não existir.
 
 create table if not exists exams (
   id uuid primary key default gen_random_uuid(),
@@ -9,8 +10,13 @@ create table if not exists exams (
   created_at timestamptz default now()
 );
 alter table exams enable row level security;
-create policy "exams: only own rows" on exams
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'exams' and policyname = 'exams: only own rows') then
+    create policy "exams: only own rows" on exams
+      for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  end if;
+end $$;
 
 -- Cada roteiro de estudo pode (opcionalmente) estar vinculado a uma prova
 alter table activities add column if not exists exam_id uuid references exams(id) on delete set null;

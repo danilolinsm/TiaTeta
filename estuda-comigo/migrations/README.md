@@ -3,6 +3,10 @@
 Rode esses arquivos **na ordem numérica**, um de cada vez, no SQL Editor do Supabase
 (Supabase → SQL Editor → New query → colar o conteúdo do arquivo → Run).
 
+As migrations 001 a 005 podem ser rodadas de novo sem erro: tabelas e colunas usam `IF NOT EXISTS` e cada
+policy só é criada se ainda não existir. `permissions` e `access_requests` (com as policies) ficam só na 001;
+a 002 não faz nada e foi mantida pela numeração.
+
 Se você já rodou algum deles antes (mesmo com o nome antigo), **não precisa rodar de novo** —
 o conteúdo é o mesmo, só o nome do arquivo mudou pra ficar mais fácil de organizar.
 

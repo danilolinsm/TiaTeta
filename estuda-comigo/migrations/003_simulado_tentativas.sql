@@ -1,4 +1,5 @@
 -- Rode isso no SQL Editor do Supabase (New query → cole tudo → Run).
+-- Idempotente: a policy só é criada se ainda não existir.
 
 -- Data da prova (opcional) em cada atividade
 alter table activities add column if not exists exam_date date;
@@ -16,5 +17,10 @@ create table if not exists attempts (
   answered_at timestamptz default now()
 );
 alter table attempts enable row level security;
-create policy "attempts: only own rows" on attempts
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'attempts' and policyname = 'attempts: only own rows') then
+    create policy "attempts: only own rows" on attempts
+      for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  end if;
+end $$;
