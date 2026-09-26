@@ -15,9 +15,8 @@
 //   3. Honeypot: campo `website` que humanos nunca preenchem; se vier preenchido, responde ok sem fazer nada.
 //   4. Validação de entrada e escape de tudo que vai para o HTML do email.
 // Se a checagem de limite falhar (Supabase fora do ar), não grava nem envia (falha fechada) e devolve 503.
-const { getAuthenticatedUser, SUPABASE_URL } = require('../lib/usage');
-
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpeXN4d2dqc2RsdHVuZ2Vpb2ppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4MzEzNzAsImV4cCI6MjEwMzQwNzM3MH0.IONaLD45l6s_0FZqTZ2gh0pCPJtmXEejYOtTilCqUHA';
+// chave anon pública do Supabase (a mesma do frontend) — reaproveitada de lib/usage.js
+const { getAuthenticatedUser, SUPABASE_URL, SUPABASE_ANON_KEY } = require('../lib/usage');
 
 const MAX_PEDIDOS_POR_DIA = 3;  // pedidos (e emails) por usuário a cada 24h
 const MAX_NOME = 100;

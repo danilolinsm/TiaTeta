@@ -239,5 +239,5 @@ async function getUsage(userId) {
 
 module.exports = {
   getAuthenticatedUser, isAdminUser, isUnlimited, reservarUso, estornarUso, getUsage, mesAtual,
-  UsageError, CATEGORIAS, LIMITE_ROTEIROS, LIMITE_IMAGENS, LIMITE_AUXILIARES, SUPABASE_URL
+  UsageError, CATEGORIAS, LIMITE_ROTEIROS, LIMITE_IMAGENS, LIMITE_AUXILIARES, SUPABASE_URL, SUPABASE_ANON_KEY
 };
