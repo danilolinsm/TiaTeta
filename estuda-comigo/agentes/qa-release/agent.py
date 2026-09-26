@@ -27,6 +27,13 @@ PRECOS = {
     "claude-opus-5": {"in": 5.00, "out": 25.00},
 }
 
+# Caminhos independentes da pasta atual (o workflow roda de estuda-comigo/, localmente
+# pode-se rodar de qualquer lugar).
+AQUI = Path(__file__).resolve().parent  # estuda-comigo/agentes/qa-release
+# Raiz do app (estuda-comigo/): onde ficam package.json e screenshots.config.ts. O preflight.sh
+# roda npm/playwright com caminhos relativos a ela e grava preflight.json/.last-qa-commit nela.
+RAIZ_APP = AQUI.parents[1]
+
 TETO_USD = float(os.environ.get("QA_TETO_USD", "2.00"))
 LIMIAR_CONFIANCA = 0.7
 LIMIAR_ESCALONAMENTO = 0.30
@@ -92,8 +99,9 @@ async def chamar(prompt: str, modelo: str, orcamento: Orcamento,
 def fase0_preflight() -> dict:
     """Determinístico. Nenhum token gasto aqui, e essa e a maior economia
     do pipeline inteiro."""
-    r = subprocess.run(["bash", "preflight.sh"], capture_output=True, text=True)
-    dados = json.loads(Path("preflight.json").read_text())
+    r = subprocess.run(["bash", str(AQUI / "preflight.sh")], cwd=RAIZ_APP,
+                       capture_output=True, text=True)
+    dados = json.loads((RAIZ_APP / "preflight.json").read_text())
     dados["preflight_returncode"] = r.returncode
     return dados
 
@@ -213,14 +221,14 @@ async def main():
 
     try:
         resolvidos, escalados = await fase1_triagem(preflight, orcamento)
-        metadados = json.loads(Path("store-metadata.json").read_text())
+        metadados = json.loads((AQUI / "store-metadata.json").read_text())
         conformidade = await fase2_conformidade(metadados, escalados, orcamento)
         await fase3_empacotar(conformidade, preflight, orcamento)
     except BudgetExceeded as e:
         escrever_issue(f"Abortado: {e}", preflight, orcamento)
         return 3
 
-    Path(".last-qa-commit").write_text(preflight["commit"])
+    (RAIZ_APP / ".last-qa-commit").write_text(preflight["commit"])
     print(f"[custo] ${orcamento.gasto:.4f} — {orcamento.por_modelo}", file=sys.stderr)
     escrever_issue("Release candidate pronto", preflight, orcamento)
     return 0

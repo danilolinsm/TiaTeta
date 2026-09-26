@@ -991,7 +991,7 @@ function renderActivityResult(a, isCurrent){
              <p style="font-size:13px;font-weight:600;text-align:center;margin:0 0 10px">Você acertou ${a.quizScore} de ${a.questoes.length} 🎉</p>
              <div class="row">
                <button class="btn" id="retry-quiz-btn">🔄 Mesmas questões</button>
-               ${a.quizScore < a.questoes.length ? `<button class="btn btn-primary" id="focus-weak-btn">🎯 Focar no que errei</button>` : ''}
+               ${a.quizScore < a.questoes.length ? `<button class="btn btn-primary" id="focus-weak-btn" ${focoEmAndamento?'disabled':''}>${focoEmAndamento?'<img src="/mascot.jpg" alt="" class="spin-mascot" style="width:20px;height:20px;vertical-align:-5px;margin-right:6px">Gerando...':'🎯 Focar no que errei'}</button>` : ''}
              </div>
            </div>`}
     </div>
@@ -1067,6 +1067,10 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':
 let pendingFiles = []; // [{base64, mediaType, isPdf, name, dataUrl}]
 let posterAbortController = null;
 let loadingTimer = null;
+// "Focar no que errei": promise da correção do quiz em andamento (auto-save + tentativa), por id
+// da atividade, e trava contra clique duplo enquanto as questões novas são geradas.
+const correcoesEmAndamento = new Map();
+let focoEmAndamento = false;
 function startLoadingTimer(){ state.loadingSeconds = 0; clearInterval(loadingTimer); loadingTimer = setInterval(()=>{ state.loadingSeconds++; render(); },1000); }
 function stopLoadingTimer(){ clearInterval(loadingTimer); loadingTimer = null; }
 let newChildPrefs = new Set();
@@ -1480,6 +1484,20 @@ function compressImage(file){
     await persistIfSaved(a);
     render();
   };
+  // Registra a promise da correção para o "Focar no que errei" esperar o auto-save terminar
+  // (senão a versão salva substitui state.currentActivity e as questões novas se perdem).
+  if(checkQuizBtn){
+    const corrigirQuiz = checkQuizBtn.onclick;
+    checkQuizBtn.onclick = (ev)=>{
+      const alvo = state.currentActivity || findOpenHistoryActivity();
+      const p = Promise.resolve(corrigirQuiz(ev)); // async: nunca lança de forma síncrona
+      if(alvo){
+        correcoesEmAndamento.set(alvo.id, p);
+        p.catch(()=>{}).then(()=>{ if(correcoesEmAndamento.get(alvo.id)===p) correcoesEmAndamento.delete(alvo.id); });
+      }
+      return p;
+    };
+  }
 
   const retryQuizBtn = document.getElementById('retry-quiz-btn');
   if(retryQuizBtn) retryQuizBtn.onclick = ()=>{
@@ -1491,20 +1509,28 @@ function compressImage(file){
 
   const focusWeakBtn = document.getElementById('focus-weak-btn');
   if(focusWeakBtn) focusWeakBtn.onclick = async ()=>{
-    const a = state.currentActivity || findOpenHistoryActivity();
-    const wrongTexts = a.questoes.filter(q=>q.userAnswer!==q.correta).map(q=>q.pergunta);
-    if(!wrongTexts.length) return;
-    focusWeakBtn.disabled = true; focusWeakBtn.textContent = 'Gerando...';
+    if(focoEmAndamento) return;
+    const a0 = state.currentActivity || findOpenHistoryActivity();
+    const correcao = a0 && correcoesEmAndamento.get(a0.id);
+    focoEmAndamento = true;
+    focusWeakBtn.disabled = true;
+    focusWeakBtn.innerHTML = `<img src="/mascot.jpg" alt="" class="spin-mascot" style="width:20px;height:20px;vertical-align:-5px;margin-right:6px">Gerando...`;
     try{
+      // espera o auto-save da correção terminar e relê a atividade (pode ter virado a versão salva)
+      if(correcao) await correcao.catch(()=>{});
+      const a = state.currentActivity || findOpenHistoryActivity();
+      const wrongTexts = a ? a.questoes.filter(q=>q.userAnswer!==q.correta).map(q=>q.pergunta) : [];
+      if(!wrongTexts.length) return;
       const child = activeChild();
       const novas = await generateWeakFocusQuestions(a, wrongTexts, wrongTexts.length, child?.age||8);
       a.questoes = novas;
       a.quizChecked = false; a.quizScore = null;
       await persistIfSaved(a);
-      render();
     }catch(e){
       window.__toast = 'Não consegui gerar as questões de foco agora. Tente de novo.';
       setTimeout(()=>{window.__toast=null;render();},4000);
+    }finally{
+      focoEmAndamento = false;
       render();
     }
   };
