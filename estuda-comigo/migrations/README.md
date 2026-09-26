@@ -14,8 +14,8 @@ A partir da 006 os arquivos são idempotentes (`IF NOT EXISTS` / `CREATE OR REPL
 | 3 | `003_simulado_tentativas.sql` | Data da prova por atividade e histórico de tentativas do simulado (`attempts`) |
 | 4 | `004_provas.sql` | Entidade própria de "prova" (`exams`), permitindo vincular vários roteiros de estudo à mesma prova |
 | 5 | `005_observacoes_prova.sql` | Campo de observações (`notes`) na prova |
-| 6 | `006_contas_sem_limite.sql` | Coluna `unlimited` em `permissions` (toggle 🚀 "Sem limite de uso" do painel admin) — ⚠️ rascunho, confirmar com o schema real |
-| 7 | `007_uso_mensal_limites_rpc.sql` | Tabela `usage_monthly` (se não existir) + coluna `auxiliares_count` + funções atômicas `consumir_uso`/`estornar_uso` (só o backend pode chamar) + RLS — ⚠️ rascunho, confirmar com o schema real |
+| 6 | `006_contas_sem_limite.sql` | Coluna `unlimited` em `permissions` (toggle 🚀 "Sem limite de uso" do painel admin). Já existe em produção, então lá o arquivo não muda nada: serve para registrar a coluna e recriar ambientes novos |
+| 7 | `007_uso_mensal_limites_rpc.sql` | Em produção: coluna `auxiliares_count` e funções atômicas `consumir_uso`/`estornar_uso` (só o backend/service_role pode chamar). Em ambiente novo, também cria `usage_monthly` igual à produção (PK `(user_id, year_month)`, RLS, policy de leitura) |
 
 ## Ordem segura de deploy (006/007 + código dos limites)
 
@@ -25,9 +25,15 @@ O código de `lib/usage.js` funciona **antes e depois** das migrations:
 - sem a coluna `auxiliares_count`, os usos de apoio (dicas, revisão de texto etc.) passam sem contagem, igual à produção de hoje; roteiros e imagens continuam limitados;
 - sem a coluna `unlimited`, só os admins (`ADMIN_EMAILS`) ficam sem limite.
 
+As duas migrations foram conferidas com o schema de produção (catálogos, set/2026) e testadas num
+Postgres local montado igual a ele: rodam 2x sem erro, não criam índice nem policy duplicados e preservam os dados.
+Obs.: o Supabase não tem nenhuma migration registrada (`supabase_migrations`), porque os arquivos daqui são
+rodados à mão no SQL Editor. Isso é esperado.
+
 Ordem recomendada:
-1. Conferir o schema real (ver o cabeçalho "A CONFIRMAR" de cada arquivo) e ajustar se preciso.
-2. Rodar a `006` e depois a `007` no SQL Editor.
+1. Rodar a `006` e depois a `007` no SQL Editor.
+2. Conferir que só o `service_role` executa as funções:
+   `select routine_name, grantee from information_schema.routine_privileges where routine_schema = 'public' and routine_name in ('consumir_uso', 'estornar_uso');`
 3. Fazer o deploy do código (merge do PR). Se o código subir antes, tudo continua funcionando pelo caminho antigo até as migrations serem aplicadas.
 4. Conferir nos logs da Vercel que **não** aparecem mais avisos `[usage] ... aplique a migration`.
 

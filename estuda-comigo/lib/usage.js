@@ -130,7 +130,8 @@ async function gravarContagem(userId, campo, ym, valor) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/usage_monthly?on_conflict=user_id,year_month`, {
     method: 'POST',
     headers: svcHeaders({ Prefer: 'resolution=merge-duplicates' }),
-    body: JSON.stringify([{ user_id: userId, year_month: ym, [campo]: valor }])
+    // updated_at existe em produção (timestamptz default now()), mas não há trigger: atualiza aqui.
+    body: JSON.stringify([{ user_id: userId, year_month: ym, [campo]: valor, updated_at: new Date().toISOString() }])
   });
   if (!r.ok) {
     const err = await lerErro(r);
