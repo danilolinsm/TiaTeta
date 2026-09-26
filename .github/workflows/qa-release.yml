@@ -13,9 +13,18 @@ name: QA e release
 #     QA_BASE_URL        — URL onde o app roda (ex.: preview/produção da Vercel); sem ela o
 #                          Playwright tenta http://localhost:3000, que não existe no runner
 #     QA_AGENTE_LLM_ATIVO — "true" para liberar o job pago; qualquer outro valor = desligado
+#     QA_AGENTE_LLM_ATIVO — TRAVA GERAL: enquanto não for "true", o agendamento (cron) não roda
+#                           NENHUM job e o job pago nunca roda (nem manualmente). Sem a variável
+#                           criada, nada dispara sozinho depois do merge.
 #   GITHUB_TOKEN é automático (não precisa cadastrar).
-# Também é preciso: environment "agente-llm" com você como required reviewer (Settings >
-# Environments) e as labels "release-blocker" e "release-candidate" criadas no repo.
+# Também é preciso:
+#   - environment "agente-llm" com você como required reviewer (Settings > Environments);
+#   - labels "release-blocker" e "release-candidate" criadas no repo;
+#   - Settings > Actions > General > Workflow permissions: marcar
+#     "Allow GitHub Actions to create and approve pull requests" (o registro de custo abre um PR).
+#
+# Nenhum job faz push na main: o registro de custo vai para uma branch própria (qa/custo-<run>)
+# e abre um PR para revisão. Este workflow não tem gatilhos push/pull_request.
 
 on:
   schedule:
@@ -40,6 +49,9 @@ jobs:
   # Se o build quebrar aqui, nenhum token e gasto.
   preflight:
     runs-on: ubuntu-latest
+    # No cron só roda com a trava ligada; manualmente (workflow_dispatch) roda sempre —
+    # este job não gasta tokens de IA (só minutos do Actions e o login de QA nos screenshots).
+    if: github.event_name == 'workflow_dispatch' || vars.QA_AGENTE_LLM_ATIVO == 'true'
     permissions:
       contents: read
       issues: write
@@ -65,9 +77,9 @@ jobs:
           ATUAL=$(git rev-parse HEAD)
           ANTERIOR=$(cat .last-qa-commit 2>/dev/null || echo "")
           if [ "$ATUAL" = "$ANTERIOR" ]; then
-            echo "mudou=false" >> $GITHUB_OUTPUT
+            echo "mudou=false" >> "$GITHUB_OUTPUT"
           else
-            echo "mudou=true" >> $GITHUB_OUTPUT
+            echo "mudou=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Pre-voo
@@ -81,9 +93,9 @@ jobs:
           npx playwright install --with-deps chromium
           bash agentes/qa-release/preflight.sh && CODIGO=0 || CODIGO=$?
           if [ "$CODIGO" -eq 2 ]; then
-            echo "build_ok=false" >> $GITHUB_OUTPUT
+            echo "build_ok=false" >> "$GITHUB_OUTPUT"
           else
-            echo "build_ok=true" >> $GITHUB_OUTPUT
+            echo "build_ok=true" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/upload-artifact@v4
@@ -106,17 +118,19 @@ jobs:
   # Fases pagas. Travam esperando sua aprovacao.
   # O environment "agente-llm" precisa ter voce como required reviewer
   # em Settings > Environments, com wait timer de 6 horas.
-  # Trava extra: só roda com a variável QA_AGENTE_LLM_ATIVO = "true". Se o environment
-  # ainda não existir, o GitHub o cria SEM proteção na primeira execução — por isso o job
-  # fica desligado por padrão até você configurar tudo.
+  # Trava extra: só roda com a variável QA_AGENTE_LLM_ATIVO = "true" (em qualquer gatilho,
+  # inclusive manual), porque gasta tokens e usa ANTHROPIC_API_KEY. Se o environment ainda não
+  # existir, o GitHub o cria SEM proteção na primeira execução — por isso o job fica desligado
+  # por padrão até você configurar tudo.
   analise:
     needs: preflight
     if: needs.preflight.outputs.mudou == 'true' && needs.preflight.outputs.build_ok == 'true' && vars.QA_AGENTE_LLM_ATIVO == 'true'
     runs-on: ubuntu-latest
     environment: agente-llm
     permissions:
-      contents: write   # commit do registro de custo
-      issues: write     # agent.py abre issue
+      contents: write       # push da branch qa/custo-<run> (nunca da main)
+      pull-requests: write  # abrir o PR do registro de custo
+      issues: write         # agent.py abre issue
     steps:
       - uses: actions/checkout@v4
 
@@ -141,18 +155,39 @@ jobs:
           # Batch corta 50%. Ligue depois do dia 10 do plano.
           QA_USAR_BATCH: "false"
 
-      - name: Registrar custo
+      # Registro de custo via PR automático (nunca push direto na main).
+      # Requer "Allow GitHub Actions to create and approve pull requests" ligado no repo.
+      # Obs.: PRs abertos com o GITHUB_TOKEN não disparam outros workflows (comportamento do GitHub).
+      - name: Registrar custo (abre PR)
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          mkdir -p docs/agentes
-          [ -f custo.log ] && cat custo.log >> docs/agentes/CUSTOS.md
+          BRANCH="qa/custo-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git config user.name "agente-qa"
           git config user.email "agente@tia-teta.local"
+          git switch -c "$BRANCH"
+          mkdir -p docs/agentes
+          if [ -f custo.log ]; then
+            cat custo.log >> docs/agentes/CUSTOS.md
+            git add docs/agentes/CUSTOS.md
+          fi
           # .last-qa-commit está no .gitignore, mas precisa ir para o repo (o job "preflight" lê dele)
-          git add docs/agentes/CUSTOS.md
-          [ -f .last-qa-commit ] && git add -f .last-qa-commit
-          git commit -m "chore: registro de custo da execucao" || true
-          git push
+          if [ -f .last-qa-commit ]; then
+            git add -f .last-qa-commit
+          fi
+          if git diff --cached --quiet; then
+            echo "Nada para registrar."
+            exit 0
+          fi
+          git commit -m "chore(qa): registro de custo da execucao ${GITHUB_RUN_ID}"
+          git push origin "$BRANCH"
+          gh pr create \
+            --base "$BASE_BRANCH" \
+            --head "$BRANCH" \
+            --title "chore(qa): registro de custo — execução ${GITHUB_RUN_ID}" \
+            --body "Registro automático de custo do agente de QA (run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). Revise e faça o merge manualmente."
 
       - uses: actions/upload-artifact@v4
         with:
