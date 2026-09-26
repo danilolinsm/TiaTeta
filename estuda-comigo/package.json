@@ -6,7 +6,7 @@
   "scripts": {
     "lint": "find . -name \"*.js\" -not -path \"./node_modules/*\" -print0 | xargs -0 -n1 node --check && echo 'lint ok: sintaxe valida em todos os .js'",
     "typecheck": "echo 'sem TypeScript no projeto ainda - typecheck nao se aplica' && exit 0",
-    "test": "echo 'sem suite de testes automatizados ainda - pendencia tecnica registrada' && exit 0",
+    "test": "node tests/run.js",
     "build": "node -e \"require('fs').accessSync('public/index.html'); console.log('build ok: index.html presente, app estatico sem bundler')\""
   },
   "devDependencies": {
