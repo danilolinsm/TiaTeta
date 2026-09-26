@@ -98,6 +98,14 @@
   .toggle button.on{background:var(--teal);color:#fff}
   .err{color:var(--danger);font-size:12px;margin-top:6px}
   .hist-item{padding:12px;border-radius:10px;border:1px solid var(--line);background:#fff;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .hist-item.is-busy{opacity:0.6;pointer-events:none}
+  .hist-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+  .hist-del{font-size:15px;padding:6px 8px;border-radius:8px}
+  .hist-del:hover{background:#FBEAE8}
+  .btn:disabled,.btn-danger:disabled{opacity:0.7;cursor:progress}
+  .btn:disabled:active{transform:none}
+  .spin-mascot.btn-spin{width:20px;height:20px;vertical-align:-5px;margin-right:6px;box-shadow:none}
+  .hist-del .spin-mascot.btn-spin{margin-right:0}
   .q-opts-interactive{display:flex;flex-direction:column;gap:6px;margin-top:6px}
   .q-opt{text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--ink)}
   .q-opt.selected{border-color:var(--teal);background:var(--teal-soft)}
@@ -164,9 +172,113 @@ async function updateActivityInDb(a){
   }).eq('id', a.id);
   if(error) console.warn('updateActivity', error);
 }
+// Apaga a atividade (as tentativas do simulado ligadas a ela vão junto — FK "on delete cascade").
+// Quem garante que só a dona apaga é a policy RLS "activities: only own rows" (for all), migration 001.
+// Retorna quantas linhas foram apagadas: com RLS, apagar algo que não é seu (ou que já sumiu)
+// não dá erro — só apaga 0 linhas. Por isso pedimos o id de volta com .select('id').
 async function deleteActivityInDb(id){
-  const { error } = await db.from('activities').delete().eq('id', id);
+  const { data, error } = await db.from('activities').delete().eq('id', id).select('id');
   if(error){ console.warn('deleteActivity', error); throw error; }
+  return Array.isArray(data) ? data.length : 0;
+}
+
+async function activityStillExists(id){
+  const { data, error } = await db.from('activities').select('id').eq('id', id).maybeSingle();
+  if(error) throw error;
+  return !!data;
+}
+
+// ---------- salvar/apagar no histórico (com trava contra clique duplo e corrida) ----------
+// A trava fica no estado (não só no botão): render() recria o botão a cada atualização da tela,
+// então "botão desabilitado" sozinho não impede um segundo insert.
+const savingActivities = new Map();   // id local da atividade -> Promise do insert em andamento
+const deletingActivities = new Set(); // ids de atividades sendo apagadas agora
+function isSavingActivity(id){ return !!id && savingActivities.has(id); }
+function isDeletingActivity(id){ return !!id && deletingActivities.has(id); }
+function btnSpinner(){ return `<img src="/mascot.jpg" alt="" class="spin-mascot btn-spin">`; }
+
+let toastTimer = null;
+function showToast(msg, ms){
+  window.__toast = escapeHtml(msg);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ window.__toast = null; toastTimer = null; render(); }, ms || 4500);
+  render();
+}
+// limpa um aviso de erro antigo (ex.: ao tentar de novo) sem esperar o timer
+function clearToast(){ clearTimeout(toastTimer); toastTimer = null; window.__toast = null; }
+
+// Salva UMA vez só: cliques repetidos e o auto-save da correção do simulado
+// reaproveitam a mesma Promise em vez de criar outra linha no banco.
+function saveActivityOnce(childId, a){
+  if(savingActivities.has(a.id)) return savingActivities.get(a.id);
+  const localId = a.id;
+  const p = (async ()=>{
+    try{
+      const saved = await insertActivityInDb(childId, a);
+      const list = state.activities[childId] = state.activities[childId] || [];
+      if(!list.some(x=>x.id===saved.id)) list.push(saved);
+      return saved;
+    } finally {
+      savingActivities.delete(localId);
+    }
+  })();
+  savingActivities.set(localId, p);
+  return p;
+}
+
+async function saveCurrentActivityToHistory(){
+  const a = state.currentActivity;
+  const child = activeChild();
+  if(!a || !child){ showToast(t('save_error_no_child')); return; }
+  if(isSavingActivity(a.id)) return; // já está salvando: ignora o clique duplo
+  const p = saveActivityOnce(child.id, a);
+  clearToast();
+  render(); // mostra o spinner "Salvando..." no botão
+  try{
+    await p;
+    if(state.currentActivity && state.currentActivity.id === a.id){
+      state.currentActivity = null;
+      state.view = 'historico';
+      state.openHistoryId = null;
+      state.celebrate = true;
+      render();
+      setTimeout(()=>{ state.celebrate=false; render(); }, 3200);
+    } else {
+      // a pessoa saiu da tela enquanto salvava: não arrasta ela pro histórico, só avisa
+      showToast(t('saved_ok'));
+    }
+  }catch(e){
+    // a trava já foi liberada (finally do saveActivityOnce); o render do toast volta o botão ao normal
+    showToast(t('save_error') + ' ' + t('error_detail') + (e.message || t('unknown_error')), 6500);
+  }
+}
+
+async function deleteActivityFromHistory(activityId){
+  if(!activityId || isDeletingActivity(activityId)) return;
+  const child = activeChild();
+  if(!child) return;
+  const a = (state.activities[child.id]||[]).find(x=>x.id===activityId);
+  if(!a){ showToast(t('delete_already_gone')); return; }
+  if(!confirm(t('confirm_delete_activity').replace('{s}', a.subject || ''))) return;
+  if(isDeletingActivity(activityId)) return;
+  deletingActivities.add(activityId);
+  clearToast();
+  render(); // mostra o spinner "Apagando..."
+  try{
+    const removed = await deleteActivityInDb(activityId);
+    if(!removed && await activityStillExists(activityId)){
+      // 0 linhas apagadas mas a atividade continua lá = o banco (RLS) recusou o DELETE
+      throw new Error(t('delete_denied'));
+    }
+    state.activities[child.id] = (state.activities[child.id]||[]).filter(x=>x.id!==activityId);
+    if(state.openHistoryId === activityId) state.openHistoryId = null;
+    if(state.currentActivity && state.currentActivity.id === activityId) state.currentActivity = null;
+    deletingActivities.delete(activityId);
+    showToast(removed ? t('deleted_ok') : t('delete_already_gone'));
+  }catch(e){
+    deletingActivities.delete(activityId);
+    showToast(t('delete_error') + ' ' + t('error_detail') + (e.message || t('unknown_error')), 6500);
+  }
 }
 async function persistIfSaved(a){
   const child = activeChild();
@@ -290,6 +402,17 @@ const I18N = {
     report:'Reportar', print:'🖨️ Imprimir / PDF', save_history:'💾 Salvar no histórico',
     history:'Histórico', no_history:'Nenhuma atividade salva ainda.', no_child:'Cadastre seu primeiro filho para começar.',
     back:'← Voltar ao histórico',
+    saving:'Salvando...', deleting:'Apagando...',
+    delete_activity:'🗑️ Apagar do histórico', delete_activity_aria:'Apagar esta atividade do histórico',
+    confirm_delete_activity:'Tem certeza que quer apagar "{s}" do histórico?\n\nAs tentativas do simulado ligadas a esta atividade também serão apagadas. Essa ação não pode ser desfeita.',
+    deleted_ok:'Atividade apagada do histórico.',
+    delete_already_gone:'Essa atividade já não existe mais no histórico (talvez tenha sido apagada em outro aparelho).',
+    delete_error:'Não consegui apagar a atividade — nada foi removido. Verifique sua conexão e tente de novo.',
+    saved_ok:'Atividade salva no histórico. ✅',
+    save_error:'Não consegui salvar no histórico — nada foi salvo. Verifique sua conexão e tente de novo.',
+    save_error_no_child:'Não encontrei a atividade ou o filho selecionado. Volte e tente de novo.',
+    delete_denied:'o servidor não permitiu apagar esta atividade (permissão).',
+    error_detail:'Detalhe: ', unknown_error:'erro desconhecido',
   },
   en:{
     subtitle:'Your partner for schoolwork',
@@ -310,6 +433,17 @@ const I18N = {
     report:'Report issue', print:'🖨️ Print / PDF', save_history:'💾 Save to history',
     history:'History', no_history:'No saved activities yet.', no_child:'Add your first child to get started.',
     back:'← Back to history',
+    saving:'Saving...', deleting:'Deleting...',
+    delete_activity:'🗑️ Delete from history', delete_activity_aria:'Delete this activity from history',
+    confirm_delete_activity:'Are you sure you want to delete "{s}" from history?\n\nQuiz attempts linked to this activity will also be deleted. This cannot be undone.',
+    deleted_ok:'Activity deleted from history.',
+    delete_already_gone:'This activity no longer exists in history (it may have been deleted on another device).',
+    delete_error:"Couldn't delete the activity — nothing was removed. Check your connection and try again.",
+    saved_ok:'Activity saved to history. ✅',
+    save_error:"Couldn't save to history — nothing was saved. Check your connection and try again.",
+    save_error_no_child:"Couldn't find the activity or the selected child. Go back and try again.",
+    delete_denied:'the server did not allow deleting this activity (permission).',
+    error_detail:'Details: ', unknown_error:'unknown error',
   }
 };
 function t(key){ return (I18N[state.lang||'pt'] && I18N[state.lang||'pt'][key]) || I18N.pt[key] || key; }
@@ -615,6 +749,8 @@ function render(){
   if(window.__toast) html += `<div class="no-print" style="position:fixed;bottom:76px;left:12px;right:12px;max-width:456px;margin:0 auto;background:var(--ink);color:#fff;font-size:12px;padding:10px 14px;border-radius:10px;z-index:30">${window.__toast}</div>`;
   app.innerHTML = html;
   try{ bindEvents(); }catch(e){ console.error('bindEvents falhou:', e); }
+  // salvar/apagar ficam num binding separado: se algo em bindEvents quebrar, esses botões continuam funcionando
+  try{ bindHistoryActionEvents(); }catch(e){ console.error('bindHistoryActionEvents falhou:', e); }
   try{ bindAdminEvents(); }catch(e){ console.error('bindAdminEvents falhou:', e); }
   bindLangToggle();
   const logoutBtn = document.getElementById('logout-btn');
@@ -946,6 +1082,8 @@ function renderExamForm(){
 function renderActivityResult(a, isCurrent){
   const child0 = activeChild();
   const alreadySaved = child0 && (state.activities[child0.id]||[]).some(x=>x.id===a.id);
+  const saving = isSavingActivity(a.id);
+  const deleting = isDeletingActivity(a.id);
   let h = `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <h3 style="font-size:16px">${escapeHtml(a.subject)}</h3>
@@ -1017,7 +1155,15 @@ function renderActivityResult(a, isCurrent){
 
     <div class="row no-print" style="margin-top:14px">
       <button class="btn btn-block" id="print-btn">${t('print')}</button>
-      ${(isCurrent && !alreadySaved) ? `<button class="btn btn-primary btn-block" id="save-activity-btn">${t('save_history')}</button>` : (alreadySaved ? `<button class="btn btn-block" id="delete-activity-btn" data-activity-id="${a.id}" style="color:var(--danger)">🗑️ Apagar</button>` : '')}
+      ${(isCurrent && !alreadySaved)
+        ? (saving
+            ? `<button class="btn btn-primary btn-block" id="save-activity-btn" disabled aria-busy="true">${btnSpinner()}${t('saving')}</button>`
+            : `<button class="btn btn-primary btn-block" id="save-activity-btn">${t('save_history')}</button>`)
+        : (alreadySaved
+            ? (deleting
+                ? `<button class="btn btn-block" id="delete-activity-btn" data-activity-id="${escapeHtml(a.id)}" style="color:var(--danger)" disabled aria-busy="true">${btnSpinner()}${t('deleting')}</button>`
+                : `<button class="btn btn-block" id="delete-activity-btn" data-activity-id="${escapeHtml(a.id)}" style="color:var(--danger)">${t('delete_activity')}</button>`)
+            : '')}
     </div>
   </div>`;
   return h;
@@ -1053,9 +1199,13 @@ function renderHistorico(){
       const days = Math.ceil((new Date(a.examDate) - new Date())/86400000);
       examBadge = days>=0 ? `<br><small style="color:var(--teal-dark);font-weight:600">⏳ ${days}d p/ prova</small>` : '';
     }
-    h += `<div class="hist-item" data-open-hist="${a.id}">
+    const deletingThis = isDeletingActivity(a.id);
+    h += `<div class="hist-item ${deletingThis?'is-busy':''}" data-open-hist="${escapeHtml(a.id)}" ${deletingThis?'aria-busy="true"':''}>
       <div><strong style="font-size:14px">${escapeHtml(a.subject)}</strong><br><small style="color:var(--sub)">${new Date(a.createdAt).toLocaleDateString('pt-BR')} · ${a.questoes.length} questões</small>${examBadge}</div>
-      <span style="color:var(--sub)">›</span>
+      <div class="hist-actions">
+        <button class="btn-danger hist-del no-print" data-del-hist="${escapeHtml(a.id)}" aria-label="${t('delete_activity_aria')}" title="${t('delete_activity_aria')}" ${deletingThis?'disabled':''}>${deletingThis ? btnSpinner() : '🗑️'}</button>
+        <span style="color:var(--sub)">›</span>
+      </div>
     </div>`;
   }
   return h;
@@ -1461,18 +1611,19 @@ function compressImage(file){
     render();
 
     const child = activeChild();
+    if(!child) return;
     const alreadySaved = (state.activities[child.id]||[]).some(x=>x.id===a.id);
     if(!alreadySaved){
       try{
-        const saved = await insertActivityInDb(child.id, a);
+        // mesma trava do botão Salvar: se o salvamento manual já estiver em andamento, reaproveita
+        const saved = await saveActivityOnce(child.id, a);
         saved.quizChecked = true;
         saved.quizScore = correctCount;
-        state.activities[child.id] = [...(state.activities[child.id]||[]), saved];
         if(state.currentActivity && state.currentActivity.id === a.id) state.currentActivity = saved;
         a = saved;
       }catch(e){
-        window.__toast = 'Corrigido, mas não consegui salvar automaticamente: ' + (e.message||'erro');
-        setTimeout(()=>{window.__toast=null;render();},4500);
+        showToast('Corrigido, mas não consegui salvar automaticamente: ' + (e.message||'erro'), 4500);
+        return; // sem atividade salva não dá pra registrar a tentativa (activity_id obrigatório)
       }
     }
 
@@ -1538,55 +1689,33 @@ function compressImage(file){
   const printBtn = document.getElementById('print-btn');
   if(printBtn) printBtn.onclick = ()=> window.print();
 
+  document.querySelectorAll('[data-open-hist]').forEach(el=>el.onclick = ()=>{
+    if(isDeletingActivity(el.dataset.openHist)) return; // não abre algo que está sendo apagado
+    state.openHistoryId = el.dataset.openHist; render();
+  });
+  const backHist = document.getElementById('back-hist');
+  if(backHist) backHist.onclick = ()=>{ state.openHistoryId = null; render(); };
+}
+
+function bindHistoryActionEvents(){
   const saveBtn = document.getElementById('save-activity-btn');
-  if(saveBtn) saveBtn.onclick = async ()=>{
+  if(saveBtn) saveBtn.onclick = ()=>{
     if(saveBtn.disabled) return;
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = `<img src="/mascot.jpg" alt="" class="spin-mascot" style="width:20px;height:20px;vertical-align:-5px;margin-right:6px">Salvando...`;
-    const child = activeChild();
-    try{
-      const saved = await insertActivityInDb(child.id, state.currentActivity);
-      state.activities[child.id] = state.activities[child.id]||[];
-      state.activities[child.id].push(saved);
-      state.currentActivity = null;
-      state.view = 'historico';
-      state.celebrate = true;
-      render();
-      setTimeout(()=>{ state.celebrate=false; render(); }, 3200);
-    }catch(e){
-      saveBtn.disabled = false;
-      saveBtn.textContent = t('save_history');
-      window.__toast = 'Não consegui salvar no histórico: ' + (e.message||'erro desconhecido');
-      setTimeout(()=>{window.__toast=null;render();},4500);
-      render();
-    }
+    saveBtn.disabled = true; // trava imediata; a trava "de verdade" é o savingActivities
+    saveCurrentActivityToHistory();
   };
 
   const deleteActBtn = document.getElementById('delete-activity-btn');
-  if(deleteActBtn) deleteActBtn.onclick = async ()=>{
-    if(!confirm('Tem certeza que quer apagar este roteiro do histórico? Essa ação não pode ser desfeita.')) return;
-    const activityId = deleteActBtn.dataset.activityId;
-    deleteActBtn.disabled = true;
-    deleteActBtn.innerHTML = `<img src="/mascot.jpg" alt="" class="spin-mascot" style="width:20px;height:20px;vertical-align:-5px;margin-right:6px">Apagando...`;
-    try{
-      await deleteActivityInDb(activityId);
-      const child = activeChild();
-      state.activities[child.id] = (state.activities[child.id]||[]).filter(x=>x.id!==activityId);
-      state.openHistoryId = null;
-      state.currentActivity = null;
-      render();
-    }catch(e){
-      deleteActBtn.disabled = false;
-      deleteActBtn.textContent = '🗑️ Apagar';
-      window.__toast = 'Não consegui apagar: ' + (e.message||'erro desconhecido');
-      setTimeout(()=>{window.__toast=null;render();},4500);
-      render();
-    }
+  if(deleteActBtn) deleteActBtn.onclick = ()=>{
+    if(deleteActBtn.disabled) return;
+    deleteActivityFromHistory(deleteActBtn.dataset.activityId);
   };
 
-  document.querySelectorAll('[data-open-hist]').forEach(el=>el.onclick = ()=>{ state.openHistoryId = el.dataset.openHist; render(); });
-  const backHist = document.getElementById('back-hist');
-  if(backHist) backHist.onclick = ()=>{ state.openHistoryId = null; render(); };
+  document.querySelectorAll('[data-del-hist]').forEach(b=>b.onclick = (ev)=>{
+    ev.stopPropagation(); // não abre a atividade ao clicar na lixeira
+    if(b.disabled) return;
+    deleteActivityFromHistory(b.dataset.delHist);
+  });
 }
 
 function findOpenHistoryActivity(){
