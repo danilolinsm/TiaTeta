@@ -367,10 +367,11 @@ async function loadMyPermission(){
 function activeChild(){ return state.children.find(c=>c.id===state.activeChildId); }
 
 // ---------- AI calls ----------
-async function callClaude(promptText, files, kind){
+// `operacao` precisa ser uma das operações aceitas por api/claude.js (lista fechada no servidor).
+async function callClaude(promptText, files, operacao){
   const res = await fetch('/api/claude', {
     method:'POST', headers:{'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}`},
-    body: JSON.stringify({ prompt: promptText, images: (files||[]).map(f=>({base64:f.base64, mediaType:f.mediaType, isPdf:f.isPdf})), kind })
+    body: JSON.stringify({ prompt: promptText, images: (files||[]).map(f=>({base64:f.base64, mediaType:f.mediaType, isPdf:f.isPdf})), operacao })
   });
   if(res.status === 413){
     throw new Error('Os arquivos anexados são grandes demais para enviar de uma vez. Tente com menos fotos ou remova o PDF.');
@@ -388,7 +389,7 @@ async function callClaude(promptText, files, kind){
 async function proofreadTexts(items){
   try{
     const res = await fetch('/api/proofread', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}`},
       body: JSON.stringify({ items })
     });
     const data = await res.json();
@@ -427,7 +428,7 @@ async function verifyImageWithClaude(dataUrl, questionText){
   const prompt = `Você está revisando uma ilustração gerada por IA para uma questão de prova infantil. Contexto da questão: "${questionText}".
 Verifique: (1) a imagem é apropriada para crianças, sem nada assustador ou confuso; (2) ela representa razoavelmente o tema da questão (não precisa ser perfeita, só coerente); (3) não tem texto ilegível, errado ou fora do lugar atrapalhando.
 Responda APENAS em JSON, sem markdown: {"ok": true ou false, "motivo": "breve explicação em poucas palavras"}`;
-  return await callClaude(prompt, [{ base64, mediaType:'image/jpeg', isPdf:false }]);
+  return await callClaude(prompt, [{ base64, mediaType:'image/jpeg', isPdf:false }], 'verificar_imagem');
 }
 
 async function illustrateQuestions(activity, prefsText, age){
@@ -509,7 +510,7 @@ Mapa anterior: ${JSON.stringify(activity.mapa)}
 Problema reportado pela mãe: "${feedback}"
 Gere APENAS um JSON: {"mapa":[{"label":"...","emoji":"..."}, ... 4 a 6 itens]}`;
   }
-  return await callClaude(prompt, null);
+  return await callClaude(prompt, null, 'regenerar_roteiro');
 }
 
 async function getQuestionHint(question, age){
@@ -521,7 +522,7 @@ Dê APENAS uma dica curta (1-2 frases) que ajude a criança a pensar no caminho 
 Responda em texto simples, sem JSON, sem markdown — só a dica.`;
   const res = await fetch('/api/claude', {
     method:'POST', headers:{'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}`},
-    body: JSON.stringify({ prompt, images: [] })
+    body: JSON.stringify({ prompt, images: [], operacao: 'dica' })
   });
   const data = await res.json();
   if(data.error) throw new Error(data.error);
@@ -536,7 +537,7 @@ Gere ${count} questões NOVAS de múltipla escolha (4 alternativas cada) sobre o
 Responda APENAS um JSON, sem markdown: {"questoes":[{"pergunta":"...","opcoes":["a","b","c","d"],"correta":0}, ...]}`;
   const res = await fetch('/api/claude', {
     method:'POST', headers:{'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}`},
-    body: JSON.stringify({ prompt, images: [] })
+    body: JSON.stringify({ prompt, images: [], operacao: 'questoes_foco' })
   });
   const data = await res.json();
   if(data.error) throw new Error(data.error);
@@ -549,7 +550,7 @@ async function regenerateQuestion(activity){
   const prompt = `Crie UMA nova questão de múltipla escolha (4 alternativas) sobre "${activity.subject}", adequada para uma criança de ${child.age} anos (${ageBand(child.age)}).
 Evite repetir estas perguntas já existentes: ${JSON.stringify(activity.questoes.map(q=>q.pergunta))}
 Gere APENAS um JSON: {"pergunta":"...","opcoes":["a","b","c","d"],"correta":0}`;
-  return await callClaude(prompt, null);
+  return await callClaude(prompt, null, 'regenerar_questao');
 }
 
 // ---------- rendering ----------
@@ -1337,11 +1338,13 @@ function compressImage(file){
   if(requestAccessBtn) requestAccessBtn.onclick = async ()=>{
     requestAccessBtn.disabled = true; requestAccessBtn.textContent = 'Enviando...';
     try{
-      await db.from('access_requests').insert({ user_id: state.user.id, email: state.user.email });
-      await fetch('/api/request-access', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ email: state.user.email, name: (state.user.user_metadata&&state.user.user_metadata.full_name)||'' })
-      }).catch(()=>{});
+      // o servidor grava o pedido em access_requests (com limite por usuário) e avisa o admin por email
+      const res = await fetch('/api/request-access', {
+        method:'POST', headers:{'Content-Type':'application/json', Authorization: `Bearer ${state.session.access_token}`},
+        body: JSON.stringify({ name: ((state.user.user_metadata&&state.user.user_metadata.full_name)||'').slice(0,100) })
+      });
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok && res.status !== 429) throw new Error(data.error || ('HTTP '+res.status)); // 429 = pedido já registrado
       state.accessRequested = true;
     }catch(e){
       console.warn('falha ao enviar pedido de acesso', e);

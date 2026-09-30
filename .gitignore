@@ -1,0 +1,10 @@
+# O app fica em estuda-comigo/ (tem o próprio .gitignore). Este cobre a raiz do repo.
+node_modules/
+.env
+.env.*
+.env.local
+*.env.local
+!.env.example
+!**/.env.example
+.vercel/
+.DS_Store
